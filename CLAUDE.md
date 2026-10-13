@@ -126,7 +126,7 @@ Este arquivo é a fonte de verdade para quem trabalhar no repositório (humanos 
 
 Alvo: `/usr/share/heidisql/heidisql-qt6`, ELF x86-64, *stripped*, SHA-256 `8c8ff0423a0843a9456ed97e21ea757f540a4459871ac963189f6bb9e7091b5f`. O pacote `heidisql-qt6-debug` também vem *stripped*, sem tabela de símbolos útil.
 
-**Limites desta análise:** a REA abriu o binário, mas nenhum descompilador nativo estava configurado (Ghidra, IDA e Hopper indisponíveis; não há Java instalado). Por isso não houve pseudocódigo. A análise estática usou `readelf`/`size` e as strings de RTTI do Free Pascal; a dinâmica usou `/proc/<pid>`. Para descompilar no futuro: instalar o Ghidra 12.1.x e definir `GHIDRA_INSTALL_DIR`.
+**Limites desta análise:** ainda **não há pseudocódigo**. A análise estática usou `readelf`/`size` e as strings de RTTI do Free Pascal; a dinâmica usou `/proc/<pid>`. Depois o Ghidra 12.1.2 (`/opt/ghidra`) e o JDK 27 foram instalados e a REA os reconhece pela CLI, mas a análise completa do binário foi **morta duas vezes pelo OOM killer**: a máquina de desenvolvimento tem 3,6 GB de RAM, e o Java do Ghidra passou de 1,3 GB, derrubando também o `gnome-shell` e o VS Code. Veja `handoff.md` para retomar com segurança (limitar o heap do Ghidra ou usar uma máquina com ≥ 8 GB).
 
 **Observado (estático):**
 | Item | Valor |
