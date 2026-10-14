@@ -1,6 +1,3 @@
-# Sanitizers globais, escolhidos pelo cache MYDB_SANITIZER (presets asan e tsan).
-# Valem para todos os alvos do projeto, para que testes e bibliotecas usem o mesmo runtime.
-
 if(MYDB_SANITIZER STREQUAL "")
     return()
 endif()
@@ -8,7 +5,6 @@ endif()
 if(MSVC)
     if(MYDB_SANITIZER STREQUAL "address")
         add_compile_options(/fsanitize=address /Zi)
-        # O ASan do MSVC não combina com /RTC (padrão do Debug).
         string(REGEX REPLACE "/RTC[1csu]+" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
     else()
         message(FATAL_ERROR "MSVC não suporta MYDB_SANITIZER=${MYDB_SANITIZER}; use address")

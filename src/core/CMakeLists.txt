@@ -1,4 +1,3 @@
-# mydb_core: domínio e interfaces puras. Sem Qt e sem bibliotecas C de banco (CLAUDE.md §4.1).
 add_library(mydb_core STATIC
     errors/DbError.cpp
 )

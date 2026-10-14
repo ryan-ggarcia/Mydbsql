@@ -1,5 +1,3 @@
-# CLAUDE.md §2.3, regra 8: -O2 (não -O3), LTO opcional e símbolos ocultos no release.
-
 if(NOT MSVC)
     foreach(config RELEASE RELWITHDEBINFO)
         string(REPLACE "-O3" "-O2" CMAKE_CXX_FLAGS_${config} "${CMAKE_CXX_FLAGS_${config}}")

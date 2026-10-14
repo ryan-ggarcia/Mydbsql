@@ -22,7 +22,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# §2.3, regra 8: símbolos ocultos por padrão; só a API de plugin é exportada.
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 
@@ -36,7 +35,6 @@ if(MYDB_BUILD_TESTS)
     enable_testing()
 endif()
 
-# Alvos importados valem só no diretório do find_package: o Qt é procurado aqui, uma vez para todos.
 if(MYDB_BUILD_APP)
     find_package(Qt6 6.5 REQUIRED COMPONENTS Widgets)
 endif()

@@ -1,5 +1,3 @@
-# mydb_logging: spdlog assíncrono (CLAUDE.md §3). O logger global é a única exceção tolerada
-# à regra "nada de singletons" (§4.3, D).
 find_package(spdlog CONFIG REQUIRED)
 
 add_library(mydb_logging STATIC Logging.cpp)

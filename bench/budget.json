@@ -1,6 +1,5 @@
 {
   "phase": 0,
-  "comment": "Limites absolutos (CLAUDE.md §2.1 e 'Pronto quando' da Fase 0). Valem para builds release, nas três plataformas.",
   "startup": {
     "startup_ms": 150,
     "rss_kb": 40960,

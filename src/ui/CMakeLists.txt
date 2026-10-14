@@ -1,4 +1,3 @@
-# mydb_ui: views Qt. Conversa só com services e interfaces do core (CLAUDE.md §4.1).
 add_library(mydb_ui STATIC
     main/MainWindow.cpp
 )

@@ -18,16 +18,12 @@ BreakConstructorInitializers: BeforeColon
 PackConstructorInitializers: NextLine
 IncludeBlocks: Regroup
 IncludeCategories:
-  # 1) headers do próprio projeto
   - Regex: '^"'
     Priority: 1
-  # 2) Qt
   - Regex: '^<Q'
     Priority: 2
-  # 3) APIs de SO e bibliotecas de terceiros (gtest, spdlog, benchmark, windows.h…)
   - Regex: '^<.*\.h>'
     Priority: 3
-  # 4) biblioteca padrão
   - Regex: '^<'
     Priority: 4
 SortIncludes: CaseSensitive

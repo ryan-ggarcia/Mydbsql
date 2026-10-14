@@ -1,5 +1,4 @@
 ---
-# Checks da Fase 0 (CLAUDE.md §5). Cada exclusão abaixo tem um motivo; não adicione outras sem explicar.
 Checks: >
   -*,
   bugprone-*,
@@ -20,21 +19,11 @@ Checks: >
   -readability-uppercase-literal-suffix,
   -readability-redundant-access-specifiers,
   -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access
-# Motivos:
-#  owning-memory: o Qt usa posse por objeto-pai (new QWidget(parent)).
-#  pro-bounds-pointer-arithmetic: argv e as APIs C de SO e de banco são ponteiros crus.
-#  pro-type-vararg: snprintf/fprintf nas mensagens de erro de baixo nível.
-#  magic-numbers: constantes nomeadas onde importam; nos testes, números literais são mais claros.
-#  avoid-do-while: idiomático em laços de retry de APIs C.
-#  avoid-unchecked-container-access: proíbe operator[] até após checagem explícita de limites; .at() em
-#    laço quente custa caro e o ASan/UBSan da CI cobre o acesso fora dos limites.
 WarningsAsErrors: '*'
 HeaderFilterRegex: '.*[/\\]src[/\\].*'
 FormatStyle: file
-# Flags do MSVC que o driver do clang não usa (ex.: /Zc:preprocessor) não são erro de análise.
 ExtraArgs: ['-Wno-unused-command-line-argument']
 CheckOptions:
-  # Convenções da CLAUDE.md §6
   - { key: readability-identifier-naming.NamespaceCase,            value: lower_case }
   - { key: readability-identifier-naming.ClassCase,                value: CamelCase }
   - { key: readability-identifier-naming.StructCase,               value: CamelCase }

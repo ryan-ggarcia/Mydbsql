@@ -2,8 +2,6 @@ find_package(GTest CONFIG REQUIRED)
 include(GoogleTest)
 include(GenerateExportHeader)
 
-# Plugin de teste: prova que DynamicLibrary e IPlatform::loadedLibraries() enxergam o carregamento
-# sob demanda, como faremos com os drivers (CLAUDE.md §2.5).
 add_library(mydb_test_plugin MODULE fixtures/TestPlugin.cpp)
 generate_export_header(mydb_test_plugin
     BASE_NAME MYDB_TEST_PLUGIN
@@ -41,8 +39,6 @@ if(Python3_Interpreter_FOUND)
 endif()
 
 if(MYDB_BUILD_APP)
-    # Fumaça da janela: abre na plataforma offscreen, mede e sai. Não confere o orçamento
-    # (isso é o job de CI com a sessão gráfica real, tools/check_budget.py).
     add_test(NAME ui.measure_startup_smoke
         COMMAND mydbsql --measure-startup --settle-ms=0 -platform offscreen)
     set_tests_properties(ui.measure_startup_smoke PROPERTIES

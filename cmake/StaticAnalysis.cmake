@@ -1,6 +1,3 @@
-# Alvos de qualidade: clang-tidy, format, format-check e a checagem de #ifdef de SO (§2.6, regra 1).
-# Os scripts ficam em tools/ e são escritos em Python para rodarem iguais nas três plataformas.
-
 find_package(Python3 3.9 COMPONENTS Interpreter)
 if(NOT Python3_Interpreter_FOUND)
     message(STATUS "Python 3 não encontrado: alvos clang-tidy, format e a checagem de #ifdef desligados")

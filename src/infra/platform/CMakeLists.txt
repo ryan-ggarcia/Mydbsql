@@ -1,6 +1,3 @@
-# mydb_platform: o único lugar com código específico de SO (CLAUDE.md §2.6, regra 1).
-# A escolha da implementação de cada SO é feita aqui, no CMake, e não com #ifdef nos fontes.
-
 add_library(mydb_platform STATIC UrlPolicy.cpp)
 add_library(mydb::platform ALIAS mydb_platform)
 
@@ -16,7 +13,6 @@ elseif(APPLE)
         PosixSupport.cpp
         DynamicLibraryPosix.cpp)
 else()
-    # Linux (suportado) e outros Unix (melhor esforço, §2.6).
     target_sources(mydb_platform PRIVATE
         LinuxPlatform.cpp
         PosixSupport.cpp
