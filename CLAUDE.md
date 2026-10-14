@@ -13,7 +13,7 @@ A §2 detalha esses objetivos com metas numéricas e regras de portabilidade (§
 
 Este arquivo é a fonte de verdade para quem trabalhar no repositório (humanos ou Claude). Ele reúne:
 
-1. a análise do HeidiSQL que serviu de referência (código-fonte e engenharia reversa do binário);
+1. a análise do HeidiSQL que serviu de referência (código-fonte e engenharia reversa do binário) e a do MySQL Workbench, referência da modelagem visual de dados (§1.6);
 2. os requisitos de leveza, velocidade e extensibilidade;
 3. a arquitetura-alvo do Mydbsql;
 4. o plano de implementação completo, por fases;
@@ -122,6 +122,8 @@ Este arquivo é a fonte de verdade para quem trabalhar no repositório (humanos 
 | A janela principal (formulário de 677 KB, com 2 `TImageCollection`, 313 itens de menu e 160 ações) é criada, escondida, junto com o gerenciador de sessões | Janela principal criada só depois de conectar; menus e ações montados sob demanda a partir do `CommandRegistry` |
 | Bibliotecas carregadas antes de serem necessárias (a `libsqlite3` sobe na inicialização do build Linux) | Driver só é carregado na primeira conexão daquele tipo (§2.2) |
 | Túnel SSH via processo externo (`ssh`/`plink` + `sshpass`) com `StrictHostKeyChecking=no`; no Windows a senha vai na linha de comando do `plink` (`-pw "…"`), visível para outros processos | libssh2 embutido, com verificação de host key; senha nunca em argv |
+| Verificação de atualização e estatísticas rodam na inicialização com WinINet **síncrono**, bloqueando a UI; as estatísticas incluem a versão dos servidores usados (§1.5, descompilação) | Sem rede na inicialização (§2.2, regra 7); qualquer rede em tarefa de fundo cancelável; telemetria só *opt-in* e sem dados dos servidores do usuário |
+| O túnel SSH responde aos prompts do `plink`/`ssh` lendo stdout/stderr com regex (frágil a mudanças de versão, como o `-legacy-stdio-prompts`) | API da libssh2, sem *screen scraping* |
 | As 34 traduções (`.mo`, ~3,4 MB) vão embutidas no executável | Traduções em arquivos `.qm` separados, carregados só para o idioma ativo |
 | Um executável monolítico de ~13 MB onde tudo é compilado junto | Núcleo pequeno + módulos registráveis (§2.4) |
 
@@ -153,7 +155,7 @@ Alvo: `/usr/share/heidisql/heidisql-qt6`, ELF x86-64, *stripped*, SHA-256 `8c8ff
 | Threads | 12 |
 | Bibliotecas `.so` mapeadas | 113 (inclui `libsqlite3` sem nenhuma conexão SQLite aberta) |
 
-**Inferência (revista após a medição no Windows, abaixo):** o mesmo HeidiSQL 12.21, compilado com Delphi/VCL no Windows, usa cerca de **1/10** da memória privada do port Linux (Lazarus + Qt6Pas). Logo, a maior parte dos ~226 MB do Linux vem provavelmente do port e do toolkit (LCL sobre Qt6, Qt, Wayland, fontes), e não das estruturas de dados do HeidiSQL. A carga da `libsqlite3` na inicialização também parece exclusiva do Linux: no Windows nenhuma DLL de banco é carregada. Nada disso foi confirmado por descompilação.
+**Inferência (revista após a medição e a descompilação no Windows, abaixo):** o mesmo HeidiSQL 12.21, compilado com Delphi/VCL no Windows, usa cerca de **1/10** da memória privada do port Linux (Lazarus + Qt6Pas). Logo, a maior parte dos ~226 MB do Linux vem provavelmente do port e do toolkit (LCL sobre Qt6, Qt, Wayland, fontes), e não das estruturas de dados do HeidiSQL. A hipótese antiga sobre os `functions-*.ini` caiu: a descompilação do build Windows mostra que eles são lidos **por conexão, depois de conectar**, não na inicialização. A carga da `libsqlite3` na inicialização também parece exclusiva do Linux: no Windows a descoberta de drivers só lista nomes de DLL e nenhuma DLL de banco é carregada. O binário Linux em si não foi descompilado.
 
 **Efeito colateral das medições:** executar o binário criou `~/.config/heidisql/` (com `tabs.ini` vazio e `Snippets/`).
 
@@ -161,7 +163,7 @@ Alvo: `/usr/share/heidisql/heidisql-qt6`, ELF x86-64, *stripped*, SHA-256 `8c8ff
 
 Alvo: `%LOCALAPPDATA%\Programs\HeidiSQL\heidisql.exe`, PE32+ x86-64, **HeidiSQL 12.21.0.7344 64 Bit** (recurso de versão), SHA-256 `d4bc6b81906832aeed79e054ed094f5e15449c8fa91285538173d4a7f90db113`, assinado (Authenticode, 11 KB). Máquina: Windows 11, 7,7 GB de RAM, 8 núcleos lógicos.
 
-**Evidências REA** (skill `reverse-engineer-anything`, CLI `rea` 6.4.0; o servidor MCP da REA não conectou nesta sessão e não há Ghidra nem Java instalados, então **também não há pseudocódigo do build Windows**):
+**Evidências REA, análise estática sem engine** (skill `reverse-engineer-anything`, CLI `rea` 6.4.0; a descompilação com Ghidra vem logo abaixo):
 | Operação | Evidence ID | Resultado |
 |---|---|---|
 | `inspect_artifact` | `ev_0229e275782c990f163fe18981ea8d548ec2cd7104ee07524c54d683864cac2b` (inventário `ev_9f0beabbcca8ed41e56f306a763c1c325e4c487e1900fcbcd1bdf7c5a3046dd7`) | PE único, sem contêiner filho |
@@ -194,9 +196,68 @@ Alvo: `%LOCALAPPDATA%\Programs\HeidiSQL\heidisql.exe`, PE32+ x86-64, **HeidiSQL 
 
 Working set (Windows) e RSS (Linux) são comparáveis; *private bytes* (Windows) e memória anônima privada (Linux) são aproximações, não a mesma métrica. Medido com um script PowerShell (observação do shell, não evidência REA: a captura de processo da REA 6.4.0 não roda em hosts Windows).
 
+**Descompilação (Ghidra 12.1.4 via REA, 2026-10-14):** sessão MCP da REA (`open_binary` com o provedor `ghidra`, heap da JVM limitado a 2 GB). A análise automática levou ~19 min e o Java ficou em ~0,7–1,1 GB, sem afetar a máquina. Resultado: **64.246 funções** e 34.615 strings (`binary_overview`, `ev_a06afd8576b8a371d17fa8f75953e47b6798b080a5788703eca99395bcca0cea`). O binário não tem símbolos: os nomes abaixo são endereços do Ghidra (`FUN_…`) e a função de cada um foi inferida pelas strings e chamadas. O pseudocódigo **não** foi copiado para o repositório (§0); o pacote de evidências exportado (33 registros) ficou fora dele.
+
+| Pergunta | Função (Evidence ID do pseudocódigo) | O que o pseudocódigo mostra |
+|---|---|---|
+| Ordem da inicialização | `entry` @ `0x1282640` (`ev_d39ad310c79f468647ac58f49218fefbbd68fb8c7c6f1fedc39a567d36d0b647`) | 1) cria as configurações; 2) se não for permitido abrir várias instâncias e já houver uma, repassa os argumentos e sai; 3) idioma (gettext) e tema VCL; 4) **cria a janela principal** (`Application.CreateForm`); 5) chama a rotina pós-criação (`0x1224610`); 6) entra no loop de mensagens |
+| Verificação de atualização e estatísticas | `0x1224610` (`ev_1cd3a0693db9ed915691c996cea503710064265ce41e28a6db1dd1e08dcb0af9`), `0x11a90c0` (`ev_aa6610e1495ea5eea7bec534099c2c928167b64e42b0beac825f862b0940a1d5`), `0xd4a890` (`ev_21b819bbab18de385a03e3cd14ccd66a7b13058746669c4aece61cff1455afa7`) | Na inicialização, se a verificação estiver ligada e o intervalo em dias tiver passado, baixa um `.ini` (`[Release]` e `[Build]`) de `updatecheck.php`. Se as estatísticas estiverem ligadas e tiverem passado **30 dias**, chama `savestats.php` com revisão, 32/64 bits, tema, ambiente (`WinDesktop`, `WinDesktopPortable` ou `Wine`), versão do Windows e, para cada sessão usada desde o último envio, a **versão do servidor e o número de conexões**. O download é **WinINet síncrono** (`InternetOpenUrlW` + laço de `InternetReadFile`), sem thread: rede **bloqueando a thread da UI** durante a abertura. A atualização pode criar uma tarefa agendada (`schtasks /Create … /xml`) para reiniciar o app |
+| Catálogo de funções SQL (`functions-*.ini`) | `0xd01de0` (`ev_04d036a9e21947ca95ca71500af7b4c245b26f48d043723028c3737b70f1a7fb`), chamado por `0xcc6870` (`ev_158fb6a2587b205f09277c57028450dade7c8b9a6b25c0861759922416aef7ff`) | Carregado **por conexão, depois de conectar** (logo após "Connected. Thread-ID"), não na inicialização. Monta uma lista de candidatos a partir da versão do servidor (ex.: `mariadb11.4,mariadb11,mariadb,mysql`; `redshift,postgresql`) e usa o primeiro `functions-<nome>.ini` que existir; lê `Name`, `Declaration`, `Category` e `Description` de cada função |
+| Descoberta das DLLs de cliente | `0xcbb620` (`ev_2bdf557dad5ebad54a25dd7c77727e69411eefa8146e3ec1ae3e496008720ec7`) | Uma regex por família: `^lib(mysql\|mariadb).*\.dll$`, `^libpq.*\.dll$`, `^sqlite.*\.dll$` (ou `^sqlite3mc.*\.dll$` para SQLite criptografado), `^(gds32\|ibclient\|fbclient).*\.dll$`; para MSSQL enumera os provedores OLE DB (`^(MSOLEDBSQL\|SQLOLEDB)`). Varre `*.dll` na pasta do app e guarda o resultado em cache por tipo de conexão. Só lista nomes; não carrega a DLL |
+| Túnel SSH | `0xcb4fc0` (`ev_07b36730668f2e2879e2bce388f8da2a57f116e44d358279dced88a7b226204f`) | Verifica se a porta local está livre e, se não, procura a próxima. Detecta PuTTY pelo nome do executável (`([pk]link\|putty)`): acrescenta `-ssh` e, no plink ≥ 0.82, `-legacy-stdio-prompts`. Monta `usuário@host`, `-pw "senha"` (só plink), `-P`/`-p` porta, `-i "chave"`, `-o StrictHostKeyChecking=no` (só OpenSSH) e `-N -L porta_local:host:porta`. Mascara a senha só no **log** (regex `(-pw\s+")[^"]*(")`); a linha de comando real leva a senha. Cria o processo com `CreateProcessW` e pipes, lê stdout/stderr por um tempo limite e **responde aos prompts** do processo: "login as:", senha ou *passphrase* (pede ao usuário) e perguntas `(y/n)` de host key (diálogo Sim/Não/Cancelar) |
+
 **Consequência para o Mydbsql:** no Windows, o HeidiSQL **já fica dentro** do nosso orçamento (§2.1: ≤ 60 MB de RSS, ≤ 25 MB de memória privada). As metas atuais só superam com folga o port Linux. Rever as metas por plataforma está em aberto (§2.1).
 
 **Efeito colateral:** as três execuções usaram as configurações já existentes do usuário em `HKCU\Software\HeidiSQL` (o HeidiSQL pode gravar nelas ao fechar). A verificação de atualização já tinha rodado no mesmo dia.
+
+### 1.6 Análise do MySQL Workbench: modelagem de dados (o que o HeidiSQL não tem)
+
+O HeidiSQL não tem modelagem visual: não há diagrama, modelo offline, *forward engineering* a partir de um modelo nem sincronização modelo ↔ banco. O MySQL Workbench é a referência dessa área. Ele também é GPL-2.0, então vale a mesma regra da §0: **usamos só comportamento e funcionalidades**. Não copie código, os arquivos `structs.*.xml`, ícones, templates de relatório (`*.tpl`) nem o `table_templates.xml`.
+
+**Material analisado (2026-10-14):** MySQL Workbench Community **8.0.47** para Windows x64 (`mysql-workbench-community-8.0.47-winx64.msi`, SHA-256 `f7a0f3c811bcec93456184bb252540cbae4ea32f9af2cc910760fccbce6767bd`, assinatura Authenticode da Oracle válida). O MSI foi só **extraído** (`msiexec /a`), não instalado, e o app **não foi executado**. Fontes: o metamodelo declarativo (`structs/*.xml`), menus e toolbars (`data/*.xml`), os módulos Python (`modules/*.py`), os nomes exportados das DLLs C++ e o modelo de exemplo `extras/sakila_full.mwb`.
+
+**Evidências REA:**
+| Operação | Alvo | Evidence ID | Resultado |
+|---|---|---|---|
+| `inspect_artifact` | `sakila_full.mwb` | `ev_e2ed1d809ffee7210e9aeb502cba24358e0e53442234ff54dc091bba9dbc6b47` | ZIP com 6 entradas: `document.mwb.xml` (509 KB), `@db/data.db` (SQLite), `@images/*.png`, `@sqlscripts/script{GUID}.sql`, `lock` |
+| `inspect_managed_artifact` | `MySQLWorkbench.exe` | `ev_c678fefbfebd056906444309d2b8d05b00efb52910b4d3b619e5c5066e812f65` | .NET Framework 4.5, CIL, WinForms |
+| `inspect_managed_artifact` | `wbprivate.wr.dll` | `ev_4750c7a1cbcc67cd0f898448b87baeca74c9248e80e93594a72db4e8d7b2309d` | C++/CLI misto (ponte entre a UI .NET e o núcleo C++) |
+| `inspect_managed_artifact` | `WBControls.dll` | `ev_a35e42c5bbf71e8bdb1044294191ce92e78858806de29c4072c0b9de74473656` | .NET Framework 4.5, CIL |
+
+**Arquitetura observada:**
+- **Metamodelo declarativo (GRT):** todas as classes do modelo são descritas em XML (`structs.*.xml`) e geradas em C++ e Python. Separa três camadas: o **catálogo** (`db.*`: `Catalog` → `Schema` → `Table`/`View`/`Routine`/`RoutineGroup`/`Trigger`/`Event`, com `Column`, `Index`, `ForeignKey`, `UserDatatype`), a **especialização por SGBD** (`db.mysql.*`: engine, partições, colunas geradas, índices invisíveis…) e o **diagrama** (`model.*` e `workbench.physical.*`), que só guarda posição e aparência e aponta para os objetos do catálogo.
+- **Canvas próprio** (`mysql.canvas.dll`, namespace `mdc`): desenho com Cairo, visualização OpenGL ou GDI, camadas (`Layer`, `BackLayer`, `InteractionLayer`), "ímãs" de conexão (`Magnet`, `BoxSideMagnet`), roteamento de linhas ortogonal (`OrthogonalLineLayouter`) e saída para PDF e PostScript (`PDFSurface`, `PSSurface`).
+- **Núcleo C++** (`wbprivate.be.dll`, `wbpublic.be.dll`): `ModelDiagramForm`, `WBComponentPhysical`, figuras (`wbfig::Table`, `wbfig::Titlebar`), `ModelFile` (leitura e gravação do `.mwb`).
+- **Forward engineering e sincronização** em `db.mysql.wbp.dll` (`DbMySQLSQLExport`, `DbMySQLScriptSync`, `DiffTreeBE`) e `db.mysql.grt.dll` (`DiffSQLGeneratorBEActionInterface`); relatório de diferenças em `db.mysql.diff.reporting.wbp.dll`.
+- **UI** no Windows em .NET/WinForms + C++/CLI; os plugins e a engenharia reversa por SGBD ficam em Python embutido (`python312.dll`). O pacote extraído ocupa **1,2 GB** e ~24 mil arquivos (inclui o MySQL Shell). É o oposto do que buscamos em leveza (§2).
+
+**Formato `.mwb` (observado no exemplo, sem documentação oficial):**
+- ZIP com `document.mwb.xml` (`grt_format="2.0"`, `document_type="MySQL Workbench Model"`, versão `1.4.4`). Cada objeto é um `<value type="object" struct-name="…" id="{GUID}">`; referências entre objetos são `<link>` com o GUID.
+- `@db/data.db`: SQLite com uma tabela por tabela do modelo (nome = GUID) que guarda as **linhas de exemplo ("inserts") do modelo**.
+- `@sqlscripts/`: scripts SQL anexados ao modelo; `@images/`: imagens usadas no diagrama; `lock`: arquivo de trava.
+- O exemplo Sakila tem 1 catálogo, 1 schema, 16 tabelas, 89 colunas, 45 índices, 23 FKs, 7 views, 6 rotinas em 2 grupos, 3 triggers, 18 tipos definidos pelo usuário, 1 diagrama com 16 figuras de tabela, 7 de view, 2 de grupo de rotinas, 23 conexões, 5 camadas, 4 notas e 1 imagem.
+
+**Inventário de funcionalidades de modelagem (o que vamos oferecer):**
+- **Modelo offline** com catálogo próprio, vários diagramas por modelo, propriedades do documento (autor, versão, datas) e "incluir outro modelo".
+- **Diagrama EER:** colocar tabela, view e grupo de rotinas; relacionamentos **1:1 e 1:n não identificadores**, **1:1 e 1:n identificadores**, **n:m** (cria a tabela associativa) e **relacionamento a partir de colunas existentes**; opções por relacionamento (opcional/obrigatório em cada lado); camadas coloridas, notas de texto, imagens; grade e "alinhar à grade"; *zoom*; marcadores de posição (1–9); minimapa (*Model Navigator*); expandir e recolher figuras; selecionar figuras semelhantes ou conectadas; *autolayout*; trazer para frente e mandar para trás.
+- **Notações:** de objeto (padrão, simplificada, só PKs e FKs, Classic, IDEF1X) e de relacionamento (Crow's Foot, Classic, UML, IDEF1X, ligação direto nas colunas).
+- **Opções do modelo:** modelos de nome (`fk_%stable%_%dtable%`, `id%table%`, `%table%_%column%`, `%stable%_has_%dtable%` para a tabela n:m), tipo padrão de coluna e de PK, engine padrão, regras ON DELETE/ON UPDATE padrão, `SQL_MODE` do gerador, o que mostrar nas figuras (tipos, flags, nome do schema, máximo de colunas).
+- **Tipos definidos pelo usuário** (ex.: `BOOLEAN` = `TINYINT(1)`) e **templates de tabela** (colunas reutilizáveis como `create_time`/`update_time`).
+- **Forward engineering** (modelo → script ou → banco) com opções: DROP antes de cada CREATE, DROP SCHEMA, CREATE INDEX separado, pular FKs e os índices delas, INSERTs das linhas do modelo, omitir o schema nos nomes, `USE`, `SHOW WARNINGS` após cada DDL, ordenar tabelas, incluir scripts anexados, pular rotinas ou triggers.
+- **Reverse engineering** de um banco vivo ou de um script `CREATE` para um modelo novo, já com diagrama montado.
+- **Sincronização** modelo ↔ banco em árvore de diferenças com direção por objeto (aplicar no banco, atualizar o modelo ou ignorar), "só atualizar o modelo", ignorar *definer* das rotinas; **sincronizar com qualquer fonte** (modelo, banco ou script, em qualquer combinação); **comparar schemas** com relatório.
+- **Validação do modelo:** integridade, sintaxe, conteúdo vazio, eficiência das tabelas, identificadores duplicados, consistência e erros de lógica.
+- **Relatório do modelo (DBDoc)** por templates; exportar o diagrama em PNG, SVG, PDF e PostScript; impressão com configuração de página.
+- **Utilidades:** criar várias tabelas de uma vez, prefixar todas as tabelas, trocar a engine de todas, ofuscar nomes, copiar SQL, nomes de colunas ou lista de tabelas.
+
+**Lições de design (o que fazer melhor que o Workbench):**
+| Problema no Workbench | Solução no Mydbsql |
+|---|---|
+| A modelagem só funciona para MySQL | O modelo usa o `core::model` neutro; geração e diff via `IDdlGenerator`/`ISqlDialect` de cada driver (MySQL, PostgreSQL, SQLite…) |
+| Formato `.mwb` binário (ZIP com XML e SQLite), difícil de versionar no Git | Formato próprio em **JSON** com ordem estável e um objeto por linha lógica, pensado para *diff* e *merge* no Git; importação de `.mwb` como módulo opcional (interoperabilidade, só leitura) |
+| Canvas próprio sobre Cairo e OpenGL | `QGraphicsScene`/`QGraphicsView` do Qt Widgets, sem dependência nova; só desenha o que está visível |
+| 1,2 GB instalados, .NET + C++/CLI no Windows, Python embutido | Modelagem como **módulo dinâmico** carregado só ao abrir um modelo (§2.2); zero custo de memória para quem não modela |
+| Sincronização e comparação acopladas ao MySQL | Um único `SchemaDiff` (o mesmo do `AlterTableBuilder`, Fase 7) serve ao table designer, à sincronização e ao relatório de comparação |
 
 ---
 
@@ -265,6 +326,10 @@ Objetivo: **adicionar uma funcionalidade = criar arquivos novos + uma linha de r
 | `CommandRegistry` | `ICommand` (ação + atalho + onde aparece no menu e na toolbar) | "Copiar como INSERT" |
 | `SettingsPageRegistry` | página de preferências do módulo | Preferências do exportador XLSX |
 | `FormatterRegistry` | `ISqlFormatter` | formatador local; formatador online opcional |
+| `NotationRegistry` | `IDiagramNotation` (desenho de figuras e de relacionamentos no diagrama) | Crow's Foot, IDEF1X, UML |
+| `ModelValidatorRegistry` | `IModelValidator` (uma regra de validação do modelo) | identificadores duplicados, FK sem índice |
+| `ModelImporterRegistry` | `IModelImporter` (lê um modelo de outro formato) | `.mwb` do MySQL Workbench |
+| `ReportTemplateRegistry` | `IModelReport` (relatório do modelo) | HTML, Markdown |
 
 **Contrato de um módulo:**
 
@@ -679,6 +744,21 @@ A partir da Fase 1, toda funcionalidade entra como **módulo** (§2.4). Se uma t
 - [ ] Empacotamento: AppImage/Flatpak, `.deb`, `.rpm`, PKGBUILD (AUR); MSI (WiX) + `.zip` portátil no Windows; `.dmg` universal assinado e notarizado no macOS (§2.6).
 - [ ] Documentação de usuário.
 
+### Fase 13 — Modelagem visual de dados (EER), o diferencial sobre o HeidiSQL
+Referência de comportamento: MySQL Workbench (§1.6). Depende das Fases 7 (DDL e `AlterTableBuilder`) e 8 (vários drivers). Tudo vive em `src/modules/modeling/`, carregado como **módulo dinâmico** só quando o usuário abre ou cria um modelo.
+- [ ] `ModelDocument` (core, sem Qt): catálogo neutro (`core::model`) + diagramas (figuras, conexões, camadas, notas, imagens, marcadores) + opções do modelo + linhas de exemplo + scripts anexados. O diagrama só guarda posição e aparência e referencia objetos do catálogo por ID estável.
+- [ ] Formato de arquivo próprio em JSON, versionado, com ordem estável e amigável a *diff* no Git (ADR); salvamento atômico (§2.6, regra 8); migração por versão de esquema.
+- [ ] Canvas com `QGraphicsScene`/`QGraphicsView`: figuras de tabela, view e grupo de rotinas; relacionamentos 1:1, 1:n (identificadores ou não), n:m (gera a tabela associativa) e a partir de colunas existentes; camadas, notas, imagens, grade, *zoom*, minimapa, marcadores, desfazer/refazer (Command).
+- [ ] Notações como plugins do `NotationRegistry`: Crow's Foot (padrão), IDEF1X, UML, Classic; modos de figura (completa, simplificada, só PKs e FKs).
+- [ ] Opções do modelo: modelos de nome para FK, PK e tabela n:m; tipos padrão; regras ON DELETE/ON UPDATE padrão; o que mostrar nas figuras. Tipos definidos pelo usuário e templates de tabela.
+- [ ] **Reverse engineering** (banco vivo ou script `CREATE` → modelo) usando `IMetadataProvider` e o parser de DDL; diagrama montado com *autolayout*.
+- [ ] **Forward engineering** (modelo → script ou → banco) via `IDdlGenerator` do dialeto escolhido, com ordem segura por dependência de FK e as opções da §1.6 (DROP, CREATE INDEX separado, pular FKs, INSERTs do modelo, omitir schema…).
+- [ ] **Sincronização** modelo ↔ banco e **comparar schemas** (modelo, banco ou script em qualquer combinação) sobre um `SchemaDiff` único, com árvore de diferenças, direção por objeto e preview do script; relatório de diferenças.
+- [ ] Validação do modelo (`ModelValidatorRegistry`): integridade, identificadores duplicados, tabelas sem PK, FKs sem índice, tipos incompatíveis entre FK e PK, objetos vazios.
+- [ ] Exportar o diagrama em PNG (`QImage`) e PDF (`QPdfWriter`); SVG só se o ADR aprovar o QtSvg (§2.2, regra 3); impressão com configuração de página. Relatório do modelo em HTML e Markdown.
+- [ ] Módulo opcional `modeling_import_mwb`: importa `.mwb` (só leitura) para quem migra do Workbench, escrito a partir do formato observado (§1.6), sem código do Workbench.
+- **Pronto quando:** um modelo com 500 tabelas abre em ≤ 1 s e rola e dá *zoom* a 60 fps; *round-trip* reverse → forward → sincronizar não gera diferenças falsas em MySQL, PostgreSQL e SQLite; sem modelo aberto, nenhuma biblioteca do módulo de modelagem é carregada.
+
 ### Ordem do MVP
 Fases **0 → 6** com MySQL/MariaDB entregam um cliente útil: conectar, navegar, consultar e editar dados. As fases 7–12 vêm depois, e a ordem entre elas pode mudar conforme a demanda.
 
@@ -749,3 +829,16 @@ cmake --build --preset debug --target format
 | `main.pas` | `MainWindow` (view) + `MainViewModel` + services; menus vindos do `CommandRegistry` |
 | `TQueryHistory` (só visto no binário) | `services::query::QueryHistoryStore` |
 | Tudo compilado num executável de 13 MB | Núcleo + `sdk/` + módulos e drivers plugáveis (§2.4) |
+
+**MySQL Workbench → Mydbsql (modelagem, §1.6):**
+
+| MySQL Workbench | Mydbsql |
+|---|---|
+| `db.*` / `db.mysql.*` (catálogo GRT) | `core::model` neutro + extensões por driver |
+| `model.*` / `workbench.physical.*` (diagrama) | `modules::modeling::Diagram`, `TableFigure`, `Connection`, `Layer`, `Note` |
+| `.mwb` (ZIP: XML + SQLite) | formato JSON próprio; `.mwb` só por importação (`IModelImporter`) |
+| `mdc::CanvasView` (Cairo/OpenGL) | `QGraphicsView` |
+| `DbMySQLSQLExport` (forward engineering) | `ForwardEngineerService` + `IDdlGenerator` |
+| `DbMySQLScriptSync` / `DiffTreeBE` | `SchemaDiff` + `SyncService` |
+| `db.mysql.plugin.wb.validate:*` | `IModelValidator` registrados no `ModelValidatorRegistry` |
+| DBDoc (templates `.tpl`) | `IModelReport` (HTML, Markdown) |
