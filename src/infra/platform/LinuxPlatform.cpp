@@ -32,7 +32,7 @@ std::optional<std::uint64_t> readProcField(const char* file, std::string_view fi
     std::ifstream input(file);
     std::string line;
     while (std::getline(input, line)) {
-        if (line.size() <= field.size() || line.compare(0, field.size(), field) != 0 || line[field.size()] != ':') {
+        if (line.size() <= field.size() || !line.starts_with(field) || line[field.size()] != ':') {
             continue;
         }
         const std::size_t begin = line.find_first_of("0123456789", field.size());

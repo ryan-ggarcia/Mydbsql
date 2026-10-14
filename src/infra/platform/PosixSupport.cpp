@@ -12,7 +12,9 @@
 #include <stdexcept>
 #include <thread>
 
-extern char** environ; // NOLINT(readability-redundant-declaration): exigido por posix_spawnp
+// Da libc; exigido por posix_spawnp.
+// NOLINTNEXTLINE(readability-redundant-declaration,cppcoreguidelines-avoid-non-const-global-variables)
+extern char** environ;
 
 namespace mydb::infra::platform::posix {
 

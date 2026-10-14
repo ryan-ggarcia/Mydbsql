@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import statistics
 import sys
 from pathlib import Path
@@ -109,6 +110,9 @@ def main() -> int:
         print(f"Baseline gravado em {args.baseline}")
     elif not args.baseline.exists():
         print("Baseline sugerido:\n" + json.dumps(suggested, indent=2))
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            # Anotações são públicas; os artefatos e os logs exigem login.
+            print(f"::notice title=Baseline sugerido ({startup['platform']})::{json.dumps(suggested)}")
 
     if failures:
         print("\nFALHOU:\n  " + "\n  ".join(failures), file=sys.stderr)

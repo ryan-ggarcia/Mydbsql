@@ -2,7 +2,6 @@
 
 #include <dlfcn.h>
 
-#include <cstring>
 #include <string>
 #include <utility>
 
@@ -43,12 +42,9 @@ DynamicLibrary::Symbol DynamicLibrary::symbol(const char* name) const noexcept {
         return nullptr;
     }
     void* address = ::dlsym(m_handle, name);
-    // dlsym devolve void*; a cópia de bytes evita a conversão objeto→função, que o C++ só admite
-    // como "conditionally-supported".
-    Symbol result = nullptr;
-    static_assert(sizeof(result) == sizeof(address));
-    std::memcpy(&result, &address, sizeof(result));
-    return result;
+    // dlsym devolve void*; o POSIX garante que a conversão objeto→função vale ("conditionally-supported" no C++).
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return reinterpret_cast<Symbol>(address);
 }
 
 void DynamicLibrary::close() noexcept {
