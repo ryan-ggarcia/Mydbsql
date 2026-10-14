@@ -48,7 +48,7 @@ Contexto para qualquer agente de IA (ou pessoa) retomar o trabalho. **Leia este 
    - Instalados **sem instalador e sem admin** em `C:\Users\Iberika\tools\`: Temurin JDK 21.0.12.1+1 e Ghidra 12.1.4 (SHA-256 dos zips conferidos com os publicados). Nenhuma variável de ambiente global foi alterada.
    - Como o MCP da REA não conecta no Claude Code e a CLI reanalisaria o binário a cada comando, foi usado um *bridge* próprio (script Python no scratchpad) que mantém **uma** sessão `rea mcp` viva com `GHIDRA_INSTALL_DIR`, `JAVA_HOME`, `GHIDRA_HEADLESS_MAXMEM=2G` e `REA_GHIDRA_STARTUP_TIMEOUT_MS` alto (o padrão de 330 s é curto para este binário). Análise: ~19 min, Java em ~0,7–1,1 GB, sem travar a máquina. Sessão fechada com `close_binary`; pacote de evidências exportado (fica fora do repositório).
    - Descompiladas: `entry`, rotina pós-criação (atualização e estatísticas), download WinINet, carga dos `functions-*.ini`, descoberta das DLLs e túnel SSH. Resultados no `CLAUDE.md` §1.5 (tabela "Descompilação") e §1.4.
-   - MySQL Workbench 8.0.47: MSI baixado (assinatura Oracle válida) e **só extraído** com `msiexec /a` em `C:\Users\Iberika\tools\wb-extract` (1,2 GB); não foi instalado nem executado. REA: `inspect_artifact` no `sakila_full.mwb` e `inspect_managed_artifact` em 3 assemblies. Resultados no `CLAUDE.md` §1.6, nos novos registries da §2.4, na **Fase 13** e na §9.
+   - MySQL Workbench 8.0.47: MSI baixado (assinatura Oracle válida) e **só extraído** com `msiexec /a` em `C:\Users\Iberika\tools\wb-extract` (1,2 GB; apagado depois, a pedido do usuário, junto com os downloads); não foi instalado nem executado. REA: `inspect_artifact` no `sakila_full.mwb` e `inspect_managed_artifact` em 3 assemblies. Resultados no `CLAUDE.md` §1.6, nos novos registries da §2.4, na **Fase 13** e na §9.
 
 ---
 
@@ -99,8 +99,8 @@ Os detalhes estão no `CLAUDE.md` §1. Resumo:
    - *Como é montado o comando SSH?* **Respondida (pseudocódigo):** ordem completa dos argumentos, porta local alternativa, respostas automáticas a prompts e máscara da senha só no log.
    - **Regra:** é uma reimplementação limpa. Use a descompilação só para entender comportamento; **nunca** copie lógica, código ou estruturas para o Mydbsql (`CLAUDE.md` §0). O pseudocódigo não vai para o repositório.
 2. **[Decidir com o usuário] Metas de memória por plataforma** (`CLAUDE.md` §2.1, nota ⚠️). O build Windows do HeidiSQL já cumpre ≤ 60 MB / ≤ 25 MB. Sugestão: medir uma janela Qt 6 Widgets vazia na Fase 0 e então fixar metas por SO.
-3. **[Sem resposta] MCP da REA no Claude Code:** o registro em `~/.claude.json` já usa `node …\rea-agents\scripts\rea.mjs mcp` (não `npx`), mas dá *timeout* de 30 s ao iniciar nesta máquina; a causa não foi investigada (suspeita: antivírus escaneando o pacote na primeira carga). Fora do Claude Code, o mesmo servidor sobe em poucos segundos. Para usar o Ghidra pelo MCP, acrescente ao `env` do servidor `GHIDRA_INSTALL_DIR=C:\Users\Iberika\tools\ghidra_12.1.4_PUBLIC`, `JAVA_HOME=C:\Users\Iberika\tools\jdk-21.0.12.1+1`, `GHIDRA_HEADLESS_MAXMEM=2G` e `REA_GHIDRA_STARTUP_TIMEOUT_MS=3600000`. Só altere o `~/.claude.json` com autorização do usuário.
-4. **[Opcional] Medir o MySQL Workbench em execução** (memória e tempo de abertura) para comparar com o orçamento. Exige instalar o MSI ou rodar a cópia extraída; ainda não foi feito.
+3. **[Verificar] MCP da REA no Claude Code:** com autorização do usuário, o `env` do servidor `rea` ganhou `GHIDRA_INSTALL_DIR`, `JAVA_HOME`, `GHIDRA_HEADLESS_MAXMEM=2G` e `REA_GHIDRA_STARTUP_TIMEOUT_MS=3600000` (`rea doctor`: registro saudável, Ghidra 12.1.4 disponível). Falta confirmar, depois de reiniciar o Claude Code, se as ferramentas da REA aparecem; antes disso o servidor dava *timeout* de 30 s ao iniciar (causa não investigada; suspeita: antivírus escaneando o pacote na primeira carga).
+4. **[Opcional] Medir o MySQL Workbench em execução** (memória e tempo de abertura) para comparar com o orçamento. Exige baixar e instalar o MSI de novo (a cópia extraída foi apagada); ainda não foi feito.
 5. **Commit** da descompilação e da análise do Workbench no `CLAUDE.md` e no `handoff.md`, quando o usuário pedir (ver formato em `CLAUDE.md` §8).
 6. **Começar a implementação pela Fase 0** do `CLAUDE.md` §5: CMake e presets, vcpkg, clang-format/tidy, CI com a matriz de 3 SOs, `infra/platform/`, `--measure-startup`, benchmarks e ADRs 0001 a 0005. Nesta máquina Windows o compilador é MSVC 2022 (ainda não verificado se está instalado).
 
@@ -142,11 +142,11 @@ Os detalhes estão no `CLAUDE.md` §1. Resumo:
 | Repositório | `C:\Users\Iberika\Documents\GitHub\Mydbsql` (branch `main`) |
 | HeidiSQL | `%LOCALAPPDATA%\Programs\HeidiSQL\heidisql.exe` (12.21.0.7344, 64 bits, Delphi/VCL) + DLLs de cliente, `plink.exe` e `functions-*.ini` na mesma pasta |
 | Configurações do HeidiSQL | registro `HKCU\Software\HeidiSQL` (sem sessões salvas em 2026-10-14) |
-| REA | CLI `rea` 6.4.0 global (`%APPDATA%\npm\rea.ps1`), Node 26.10.0; MCP `rea` não conecta no Claude Code (timeout) |
+| REA | CLI `rea` 6.4.0 global (`%APPDATA%\npm\rea.ps1`), Node 26.10.0. MCP `rea` no `~/.claude.json` já com o `env` do Ghidra (2026-10-14, backup em `~/.claude.json.bak-2026-10-14`); ainda não testado após reiniciar o Claude Code, e antes disso dava timeout de 30 s ao iniciar |
 | Java | `C:\Users\Iberika\tools\jdk-21.0.12.1+1` (Temurin, zip; não está no PATH global) |
 | Ghidra | `C:\Users\Iberika\tools\ghidra_12.1.4_PUBLIC` (zip oficial; `rea doctor` o reconhece com `GHIDRA_INSTALL_DIR` e `JAVA_HOME` definidos) |
-| Downloads | `C:\Users\Iberika\tools\_downloads\` (zips do JDK e do Ghidra, MSI do Workbench; podem ser apagados) |
-| MySQL Workbench 8.0.47 (extraído, não instalado) | `C:\Users\Iberika\tools\wb-extract\PFiles64\MySQL\MySQL Workbench 8.0 CE\` (`structs/`, `data/`, `modules/`, `extras/sakila_full.mwb`) |
+| MySQL Workbench 8.0.47 | **apagado** a pedido do usuário em 2026-10-14 (a cópia extraída e os downloads). Para reanalisar: baixar `https://cdn.mysql.com//Downloads/MySQLGUITools/mysql-workbench-community-8.0.47-winx64.msi` (SHA-256 `f7a0f3c811bcec93456184bb252540cbae4ea32f9af2cc910760fccbce6767bd`) e extrair com `msiexec /a <msi> /qn TARGETDIR=<pasta nova>`. Os arquivos úteis ficam em `PFiles64\MySQL\MySQL Workbench 8.0 CE\` (`structs/`, `data/`, `modules/`, `extras/sakila_full.mwb`) |
+| Tamanho do Workbench instalado | ~1,2 GB, dos quais ~1 GB é o `swb` (MySQL Shell ~764 MB + MySQL Router ~244 MB); o Workbench em si tem ~200 MB |
 | Análise do HeidiSQL no Ghidra | ~19 min com `GHIDRA_HEADLESS_MAXMEM=2G`; a análise é efêmera (apagada no `close_binary`), então repetir custa o mesmo tempo |
 | Python | `C:\Python314\python.exe` (use `python -I`; para imprimir Unicode, `sys.stdout.reconfigure(encoding='utf-8')`) |
 | Shells | PowerShell 5.1 e Git Bash |
