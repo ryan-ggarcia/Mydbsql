@@ -1,5 +1,11 @@
 add_library(mydb_core STATIC
     errors/DbError.cpp
+    model/Column.cpp
+    model/DataType.cpp
+    model/ForeignKey.cpp
+    model/TableDefinition.cpp
+    sql/SqlSplitter.cpp
+    sql/SqlTokenizer.cpp
 )
 add_library(mydb::core ALIAS mydb_core)
 

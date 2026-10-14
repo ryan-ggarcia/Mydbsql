@@ -1,9 +1,10 @@
 add_library(mydb_app_support STATIC
     CommandLine.cpp
+    ModuleHost.cpp
     StartupReport.cpp
 )
 add_library(mydb::app_support ALIAS mydb_app_support)
-target_link_libraries(mydb_app_support PUBLIC mydb::core)
+target_link_libraries(mydb_app_support PUBLIC mydb::core mydb::sdk mydb::platform)
 mydb_set_warnings(mydb_app_support)
 
 if(NOT MYDB_BUILD_APP)
