@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+"""Confere o orçamento de desempenho (CLAUDE.md §2.1 e §2.5).
+
+Entradas:
+  --startup run1.json run2.json run3.json   saídas de `mydbsql --measure-startup=<arquivo>` (usa a mediana)
+  --benchmarks bench.json                   saída de `mydb_bench --benchmark_out=<arquivo> --benchmark_out_format=json`
+  --budget bench/budget.json                limites absolutos da fase atual
+  --baseline bench/baseline/<plataforma>.json   valores de referência; regressão > tolerância falha
+
+Sem baseline (primeira execução numa plataforma), só os limites absolutos valem e o script imprime
+o baseline sugerido. Use --write-baseline para gravá-lo.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import statistics
+import sys
+from pathlib import Path
+
+# Métricas de inicialização em que "menor é melhor".
+STARTUP_METRICS = ("startup_ms", "rss_kb", "anon_kb", "libs_loaded")
+TIME_UNIT_TO_NS = {"ns": 1.0, "us": 1e3, "ms": 1e6, "s": 1e9}
+
+
+def load(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def median_startup(paths: list[Path]) -> dict:
+    runs = [load(p) for p in paths]
+    platforms = {run["platform"] for run in runs}
+    if len(platforms) != 1:
+        sys.exit(f"Execuções de plataformas diferentes: {platforms}")
+    if any(run.get("debug_build") for run in runs):
+        print("aviso: medição de um build de debug; o orçamento vale para release", file=sys.stderr)
+    result = {"platform": platforms.pop(), "runs": len(runs)}
+    for metric in STARTUP_METRICS:
+        result[metric] = statistics.median(run[metric] for run in runs)
+    return result
+
+
+def benchmark_times(path: Path) -> dict[str, float]:
+    data = load(path)
+    times: dict[str, float] = {}
+    for bench in data.get("benchmarks", []):
+        if bench.get("run_type", "iteration") != "iteration":
+            continue  # ignora agregados (mean/median/stddev) quando há repetições
+        factor = TIME_UNIT_TO_NS[bench.get("time_unit", "ns")]
+        times[bench["name"]] = bench["real_time"] * factor
+    return times
+
+
+def main() -> int:
+    for stream in (sys.stdout, sys.stderr):  # acentos legíveis também no console do Windows
+        stream.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--startup", nargs="+", type=Path, required=True)
+    parser.add_argument("--benchmarks", type=Path)
+    parser.add_argument("--budget", type=Path, required=True)
+    parser.add_argument("--baseline", type=Path, required=True)
+    parser.add_argument("--write-baseline", action="store_true")
+    args = parser.parse_args()
+
+    startup = median_startup(args.startup)
+    benchmarks = benchmark_times(args.benchmarks) if args.benchmarks else {}
+    budget = load(args.budget)
+    failures: list[str] = []
+
+    print(f"Inicialização ({startup['platform']}, mediana de {startup['runs']}):")
+    for metric in STARTUP_METRICS:
+        limit = budget.get("startup", {}).get(metric)
+        value = startup[metric]
+        status = "ok"
+        if limit is not None and value > limit:
+            status = f"ESTOUROU o orçamento ({limit})"
+            failures.append(f"{metric}={value} > orçamento {limit}")
+        print(f"  {metric:12} {value:>10} {status}")
+
+    if args.baseline.exists():
+        baseline = load(args.baseline)
+        tolerance = float(baseline.get("tolerance", 0.10))
+        for metric in STARTUP_METRICS:
+            reference = baseline.get("startup", {}).get(metric)
+            if reference and startup[metric] > reference * (1 + tolerance):
+                failures.append(f"{metric}: {startup[metric]} > baseline {reference} +{tolerance:.0%}")
+        for name, reference in baseline.get("benchmarks", {}).items():
+            value = benchmarks.get(name)
+            if value is None:
+                continue
+            ratio = value / reference
+            print(f"  bench {name:28} {value:>12.1f} ns  ({ratio:.2f}× baseline)")
+            if ratio > 1 + tolerance:
+                failures.append(f"{name}: {value:.1f} ns > baseline {reference:.1f} ns +{tolerance:.0%}")
+    else:
+        print(f"Sem baseline em {args.baseline}: só o orçamento absoluto foi conferido.")
+
+    suggested = {
+        "platform": startup["platform"],
+        "tolerance": 0.10,
+        "startup": {metric: startup[metric] for metric in STARTUP_METRICS},
+        "benchmarks": {name: round(value, 1) for name, value in sorted(benchmarks.items())},
+    }
+    if args.write_baseline:
+        args.baseline.parent.mkdir(parents=True, exist_ok=True)
+        args.baseline.write_text(json.dumps(suggested, indent=2) + "\n", encoding="utf-8")
+        print(f"Baseline gravado em {args.baseline}")
+    elif not args.baseline.exists():
+        print("Baseline sugerido:\n" + json.dumps(suggested, indent=2))
+
+    if failures:
+        print("\nFALHOU:\n  " + "\n  ".join(failures), file=sys.stderr)
+        return 1
+    print("\nOrçamento respeitado.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

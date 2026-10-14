@@ -1,0 +1,60 @@
+---
+# Checks da Fase 0 (CLAUDE.md §5). Cada exclusão abaixo tem um motivo; não adicione outras sem explicar.
+Checks: >
+  -*,
+  bugprone-*,
+  cppcoreguidelines-*,
+  modernize-*,
+  performance-*,
+  readability-*,
+  -bugprone-easily-swappable-parameters,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -readability-magic-numbers,
+  -cppcoreguidelines-owning-memory,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-type-vararg,
+  -cppcoreguidelines-avoid-do-while,
+  -modernize-use-trailing-return-type,
+  -readability-identifier-length,
+  -readability-function-cognitive-complexity,
+  -readability-uppercase-literal-suffix,
+  -readability-redundant-access-specifiers,
+  -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access
+# Motivos:
+#  owning-memory: o Qt usa posse por objeto-pai (new QWidget(parent)).
+#  pro-bounds-pointer-arithmetic: argv e as APIs C de SO e de banco são ponteiros crus.
+#  pro-type-vararg: snprintf/fprintf nas mensagens de erro de baixo nível.
+#  magic-numbers: constantes nomeadas onde importam; nos testes, números literais são mais claros.
+#  avoid-do-while: idiomático em laços de retry de APIs C.
+#  avoid-unchecked-container-access: proíbe operator[] até após checagem explícita de limites; .at() em
+#    laço quente custa caro e o ASan/UBSan da CI cobre o acesso fora dos limites.
+WarningsAsErrors: '*'
+HeaderFilterRegex: '.*[/\\]src[/\\].*'
+FormatStyle: file
+# Flags do MSVC que o driver do clang não usa (ex.: /Zc:preprocessor) não são erro de análise.
+ExtraArgs: ['-Wno-unused-command-line-argument']
+CheckOptions:
+  # Convenções da CLAUDE.md §6
+  - { key: readability-identifier-naming.NamespaceCase,            value: lower_case }
+  - { key: readability-identifier-naming.ClassCase,                value: CamelCase }
+  - { key: readability-identifier-naming.StructCase,               value: CamelCase }
+  - { key: readability-identifier-naming.EnumCase,                 value: CamelCase }
+  - { key: readability-identifier-naming.EnumConstantCase,         value: CamelCase }
+  - { key: readability-identifier-naming.FunctionCase,             value: camelBack }
+  - { key: readability-identifier-naming.MethodCase,               value: camelBack }
+  - { key: readability-identifier-naming.VariableCase,             value: camelBack }
+  - { key: readability-identifier-naming.ParameterCase,            value: camelBack }
+  - { key: readability-identifier-naming.PrivateMemberCase,        value: camelBack }
+  - { key: readability-identifier-naming.PrivateMemberPrefix,      value: m_ }
+  - { key: readability-identifier-naming.ProtectedMemberCase,      value: camelBack }
+  - { key: readability-identifier-naming.ProtectedMemberPrefix,    value: m_ }
+  - { key: readability-identifier-naming.ConstexprVariableCase,    value: CamelCase }
+  - { key: readability-identifier-naming.ConstexprVariablePrefix,  value: k }
+  - { key: readability-identifier-naming.GlobalConstantCase,       value: CamelCase }
+  - { key: readability-identifier-naming.GlobalConstantPrefix,     value: k }
+  - { key: readability-identifier-naming.MacroDefinitionCase,      value: UPPER_CASE }
+  - { key: readability-identifier-naming.TypeAliasCase,            value: CamelCase }
+  - { key: readability-identifier-naming.TemplateParameterCase,    value: CamelCase }
+  - { key: cppcoreguidelines-special-member-functions.AllowSoleDefaultDtor, value: true }
+  - { key: readability-implicit-bool-conversion.AllowPointerConditions,   value: true }
+...

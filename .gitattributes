@@ -1,0 +1,11 @@
+# Fim de linha LF no repositório em todas as plataformas (§2.6, regra 3).
+* text=auto eol=lf
+
+# Scripts do Windows precisam de CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+*.png binary
+*.ico binary
+*.svg text

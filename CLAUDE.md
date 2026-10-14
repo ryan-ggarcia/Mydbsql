@@ -391,7 +391,7 @@ extern "C" MYDB_EXPORT mydb::sdk::IModule* mydb_module_entry();
 | SO | Versões mínimas | Arquiteturas | Compilador | Sessão gráfica |
 |---|---|---|---|---|
 | **Linux** (plataforma principal) | glibc ≥ 2.31 (Ubuntu 20.04+, Debian 11+, Fedora atual, Arch) | x86-64, ARM64 | GCC ≥ 12 ou Clang ≥ 15 | **Wayland e X11** |
-| **Windows** | 10 (1809+) e 11 | x86-64, ARM64 | MSVC 2022 (v143); Clang-cl opcional | — |
+| **Windows** | 10 (1809+) e 11 | x86-64, ARM64 | MSVC 2022 (v143) ou 2026 (v145), binariamente compatíveis; Clang-cl opcional | — |
 | **macOS** | 12 Monterey+ | Apple Silicon (arm64) e Intel (x86-64), binário universal | Apple Clang (Xcode 15+) | — |
 
 Outros sistemas (FreeBSD, por exemplo) são "melhor esforço": devem compilar se as dependências existirem, mas não bloqueiam a CI.
@@ -425,7 +425,7 @@ Outros sistemas (FreeBSD, por exemplo) são "melhor esforço": devem compilar se
 |---|---|---|
 | Linguagem | C++20 | Conceitos, `std::span`, `std::format` (ou `fmt` como fallback), ranges, `std::jthread`/`stop_token` |
 | Build | CMake ≥ 3.25 + Ninja, presets em `CMakePresets.json` | Padrão multiplataforma |
-| Dependências | vcpkg (manifest `vcpkg.json`) | Reprodutível em Linux, Windows e macOS |
+| Dependências | vcpkg (manifest `vcpkg.json`, baseline em `vcpkg-configuration.json`); o Qt vem dos binários oficiais via `tools/fetch_qt.py` (ADR-0006) | Reprodutível em Linux, Windows e macOS |
 | UI | **Qt 6 Widgets** (`QTreeView`/`QTableView` + models próprios) | Maduro, multiplataforma; equivale à variante Qt6 do HeidiSQL |
 | Editor SQL | **QScintilla** (ou KSyntaxHighlighting + QPlainTextEdit) | Realce, dobra, autocomplete |
 | MySQL/MariaDB | libmariadb (Connector/C) | API C estável, múltiplos resultados, `mysql_kill`/thread id |
@@ -639,15 +639,15 @@ Cada fase termina com **build verde em CI nas 3 plataformas, testes passando, or
 A partir da Fase 1, toda funcionalidade entra como **módulo** (§2.4). Se uma tarefa exigir editar `MainWindow` ou outro módulo para funcionar, falta um ponto de extensão: crie-o primeiro.
 
 ### Fase 0 — Fundação (infra do projeto)
-- [ ] CMake + presets (`debug`, `release`, `asan`, `tsan`); vcpkg manifest; alvo `mydb_core` (lib), `mydbsql` (exe), `mydb_tests`.
-- [ ] `.clang-format`, `.clang-tidy` (checks `modernize-*`, `cppcoreguidelines-*`, `bugprone-*`, `performance-*`, `readability-*`).
-- [ ] GitHub Actions com a matriz da §2.6 (Linux x86-64/ARM64, Windows, macOS): build + testes + clang-tidy + sanitizers.
-- [ ] `infra/platform/` com `IPlatform` e as três implementações (Linux, Windows, macOS): caminhos, libs dinâmicas, memória, bibliotecas carregadas, abrir URL; checagem de CI que proíbe `#ifdef` de SO fora dessa pasta.
-- [ ] spdlog configurado; `DbError` com hierarquia de exceções (`ConnectionError`, `QueryError`, `CancelledError`).
-- [ ] ADR-0001: arquitetura em camadas; ADR-0002: Qt 6 Widgets; ADR-0003: drivers nativos sem QtSql; ADR-0004: módulos e plugins (§2.4); ADR-0005: orçamento de desempenho (§2.1).
-- [ ] Flag `--measure-startup` (JSON com `startup_ms`, `rss_kb`, `anon_kb`, `libs_loaded`) + job de CI que compara com `bench/baseline.json`.
-- [ ] Google Benchmark configurado em `bench/`; watchdog do *event loop* (> 16 ms) em builds de debug.
-- [ ] Release com LTO e `-fvisibility=hidden`.
+- [x] CMake + presets (`debug`, `release`, `asan`, `tsan`); vcpkg manifest; alvo `mydb_core` (lib), `mydbsql` (exe), `mydb_tests`.
+- [x] `.clang-format`, `.clang-tidy` (checks `modernize-*`, `cppcoreguidelines-*`, `bugprone-*`, `performance-*`, `readability-*`).
+- [ ] GitHub Actions com a matriz da §2.6 (Linux x86-64/ARM64, Windows, macOS): build + testes + clang-tidy + sanitizers. *(`.github/workflows/ci.yml` escrito; falta a primeira execução, que depende de um push.)*
+- [ ] `infra/platform/` com `IPlatform` e as três implementações (Linux, Windows, macOS): caminhos, libs dinâmicas, memória, bibliotecas carregadas, abrir URL; checagem de CI que proíbe `#ifdef` de SO fora dessa pasta. *(Windows compilado e testado; Linux e macOS escritos, aguardando a CI. A checagem de `#ifdef` já roda no CTest.)*
+- [x] spdlog configurado; `DbError` com hierarquia de exceções (`ConnectionError`, `QueryError`, `CancelledError`).
+- [x] ADR-0001: arquitetura em camadas; ADR-0002: Qt 6 Widgets; ADR-0003: drivers nativos sem QtSql; ADR-0004: módulos e plugins (§2.4); ADR-0005: orçamento de desempenho (§2.1). Extra: ADR-0006, Qt pelos binários oficiais.
+- [ ] Flag `--measure-startup` (JSON com `startup_ms`, `rss_kb`, `anon_kb`, `libs_loaded`) + job de CI que compara com `bench/baseline.json`. *(Flag e `tools/check_budget.py` prontos e medidos no Windows; o job `startup-budget` e os baselines por plataforma, em `bench/baseline/<plataforma>.json`, dependem da primeira execução da CI.)*
+- [x] Google Benchmark configurado em `bench/`; watchdog do *event loop* (> 16 ms) em builds de debug.
+- [x] Release com LTO e `-fvisibility=hidden`.
 - **Pronto quando:** `cmake --preset debug && cmake --build --preset debug && ctest --preset debug` passa, a janela vazia abre e `--measure-startup` mostra ≤ 150 ms e ≤ 40 MB de RSS **nas três plataformas**.
 
 ### Fase 1 — Núcleo de domínio e SQL (`core/`)
@@ -780,20 +780,27 @@ Fases **0 → 6** com MySQL/MariaDB entregam um cliente útil: conectar, navegar
 ## 7. Comandos
 
 ```bash
-# configurar e compilar
+# pré-requisitos: VCPKG_ROOT e QT_ROOT_DIR definidos (ou um CMakeUserPresets.json local; veja o README)
+python tools/fetch_qt.py --version 6.11.3 --host <windows_x86|linux_x64|linux_arm64|mac_x64> --arch <…> --out <pasta>
+
+# configurar e compilar (no Windows: prefixe com tools\vsdev.cmd para carregar o MSVC)
 cmake --preset debug
 cmake --build --preset debug
 
-# testes unitários
+# testes (rótulos: unit, lint, ui, startup)
 ctest --preset debug -L unit
 
 # testes de integração (sobe MySQL, MariaDB e PostgreSQL)
 docker compose -f tests/docker-compose.yml up -d
 ctest --preset debug -L integration
 
-# análise estática e formatação
+# análise estática e formatação (versões fixas em tools/requirements-dev.txt)
 cmake --build --preset debug --target clang-tidy
-cmake --build --preset debug --target format
+cmake --build --preset debug --target format        # corrige; format-check só verifica
+
+# orçamento de inicialização (§2.5)
+build/release/src/app/mydbsql --measure-startup=run1.json
+python tools/check_budget.py --startup run1.json run2.json run3.json --budget bench/budget.json --baseline bench/baseline/<plataforma>.json
 ```
 
 > Esses comandos descrevem o alvo da Fase 0. Atualize-os se os presets ou os alvos mudarem.

@@ -2,15 +2,15 @@
 
 Contexto para qualquer agente de IA (ou pessoa) retomar o trabalho. **Leia este arquivo inteiro e depois o `CLAUDE.md`**, que é a fonte de verdade do projeto. Este arquivo descreve *o que aconteceu e o que falta*; o `CLAUDE.md` descreve *o que construir e como*.
 
-Última atualização: 2026-10-14, após a descompilação do HeidiSQL (Windows) e a análise da modelagem do MySQL Workbench.
+Última atualização: 2026-10-14, após o início da **Fase 0** (fundação do código) na máquina Windows.
 
 ---
 
 ## 1. Resumo em 30 segundos
 
 - **Projeto:** Mydbsql, um cliente gráfico de bancos de dados inspirado no HeidiSQL, a ser escrito **do zero em C++20**, orientado a objetos, com **SOLID**, **leve, rápido, fácil de estender** e **compatível com Linux, Windows e macOS**.
-- **Estado do repositório:** só documentação. **Nenhum código foi escrito ainda.** Arquivos: `README.md`, `CLAUDE.md` (plano completo) e este `handoff.md`. A análise do build Windows foi commitada pelo usuário em `c0f1364`; a descompilação e a análise do MySQL Workbench (2026-10-14, segunda parte) **não** foram commitadas.
-- **Fase atual:** análise do HeidiSQL concluída por código-fonte, binário Linux, binário Windows (REA + **descompilação com Ghidra**) e medições em execução nos dois SOs. Análise da **modelagem de dados do MySQL Workbench** concluída (`CLAUDE.md` §1.6) e planejada como **Fase 13**. **Pendente:** decidir se as metas de memória viram metas por plataforma (§6). Depois, começar a **Fase 0**.
+- **Estado do repositório:** toda a análise está commitada (até `e2c2346`). A **Fase 0 está em andamento e não foi commitada**: CMake, presets, vcpkg, `infra/platform`, logging, `DbError`, janela vazia com `--measure-startup`, testes, benchmarks, CI e ADRs 0001–0006 (§3, item 9).
+- **Fase atual:** **Fase 0**. No Windows tudo compila sem warnings (`/W4 /WX`), os 26 testes passam, o clang-tidy está limpo e a janela vazia cabe no orçamento. Falta rodar a CI pela primeira vez, que é o único jeito de validar Linux e macOS a partir desta máquina (§6). A análise do HeidiSQL e do MySQL Workbench está concluída (`CLAUDE.md` §1.5 e §1.6).
 
 ---
 
@@ -49,6 +49,12 @@ Contexto para qualquer agente de IA (ou pessoa) retomar o trabalho. **Leia este 
    - Como o MCP da REA não conecta no Claude Code e a CLI reanalisaria o binário a cada comando, foi usado um *bridge* próprio (script Python no scratchpad) que mantém **uma** sessão `rea mcp` viva com `GHIDRA_INSTALL_DIR`, `JAVA_HOME`, `GHIDRA_HEADLESS_MAXMEM=2G` e `REA_GHIDRA_STARTUP_TIMEOUT_MS` alto (o padrão de 330 s é curto para este binário). Análise: ~19 min, Java em ~0,7–1,1 GB, sem travar a máquina. Sessão fechada com `close_binary`; pacote de evidências exportado (fica fora do repositório).
    - Descompiladas: `entry`, rotina pós-criação (atualização e estatísticas), download WinINet, carga dos `functions-*.ini`, descoberta das DLLs e túnel SSH. Resultados no `CLAUDE.md` §1.5 (tabela "Descompilação") e §1.4.
    - MySQL Workbench 8.0.47: MSI baixado (assinatura Oracle válida) e **só extraído** com `msiexec /a` em `C:\Users\Iberika\tools\wb-extract` (1,2 GB; apagado depois, a pedido do usuário, junto com os downloads); não foi instalado nem executado. REA: `inspect_artifact` no `sakila_full.mwb` e `inspect_managed_artifact` em 3 assemblies. Resultados no `CLAUDE.md` §1.6, nos novos registries da §2.4, na **Fase 13** e na §9.
+   - A documentação foi commitada pelo usuário em `3738555` e `e2c2346`.
+9. **2026-10-14:** "atualize o handoff, verifique se as ferramentas da REA estão instaladas e, se tudo estiver ok, comece a Fase 0". Feito:
+   - **REA:** depois de reiniciar o Claude Code, o servidor MCP `rea` conecta e expõe todas as ferramentas (`mcp__rea__*`). O `rea doctor` mostra o Ghidra 12.1.4 e o JDK 21 saudáveis; Hopper e IDA estão ausentes (opcionais).
+   - **Toolchain encontrado:** VS 2026 Build Tools 18.10 com MSVC 14.51 (toolset v145), CMake, Ninja e vcpkg embutidos. Há também um VS Community 2026 18.4 sem MSVC útil e com data de suporte vencida. Faltavam o Qt e as ferramentas do LLVM.
+   - **Instalado com autorização do usuário:** Qt 6.11.3 `qtbase` para MSVC 64 bits (binários oficiais, 275 MB, em `C:\Users\Iberika\tools\Qt`) e, via `pip install --user`, aqtinstall 3.3.0, clang-format 23.1.3 e clang-tidy 22.1.8. O aqtinstall **não funciona** com o layout novo do repositório do Qt no Windows, por isso foi escrito `tools/fetch_qt.py` (ADR-0006).
+   - **Fase 0 implementada** (detalhes e pendências em §6 e no `CLAUDE.md` §5).
 
 ---
 
@@ -98,11 +104,27 @@ Os detalhes estão no `CLAUDE.md` §1. Resumo:
    - *Como são montados os nomes das libs?* **Respondida (pseudocódigo):** uma regex por família, varrendo `*.dll` na pasta do app, com cache por tipo de conexão; MSSQL via provedores OLE DB.
    - *Como é montado o comando SSH?* **Respondida (pseudocódigo):** ordem completa dos argumentos, porta local alternativa, respostas automáticas a prompts e máscara da senha só no log.
    - **Regra:** é uma reimplementação limpa. Use a descompilação só para entender comportamento; **nunca** copie lógica, código ou estruturas para o Mydbsql (`CLAUDE.md` §0). O pseudocódigo não vai para o repositório.
-2. **[Decidir com o usuário] Metas de memória por plataforma** (`CLAUDE.md` §2.1, nota ⚠️). O build Windows do HeidiSQL já cumpre ≤ 60 MB / ≤ 25 MB. Sugestão: medir uma janela Qt 6 Widgets vazia na Fase 0 e então fixar metas por SO.
-3. **[Verificar] MCP da REA no Claude Code:** com autorização do usuário, o `env` do servidor `rea` ganhou `GHIDRA_INSTALL_DIR`, `JAVA_HOME`, `GHIDRA_HEADLESS_MAXMEM=2G` e `REA_GHIDRA_STARTUP_TIMEOUT_MS=3600000` (`rea doctor`: registro saudável, Ghidra 12.1.4 disponível). Falta confirmar, depois de reiniciar o Claude Code, se as ferramentas da REA aparecem; antes disso o servidor dava *timeout* de 30 s ao iniciar (causa não investigada; suspeita: antivírus escaneando o pacote na primeira carga).
+2. **[Decidir com o usuário] Metas de memória por plataforma** (`CLAUDE.md` §2.1, nota ⚠️). **Primeiro dado medido (2026-10-14, Windows, release, janela Qt 6.11.3 vazia, mediana de 3 execuções aquecidas):** **~67 ms** até a primeira exposição, **~32,6 MB** de working set, **~10,4 MB** de *private bytes* e 78 módulos (incluindo `spdlog.dll` e `fmt.dll`, porque o triplet `x64-windows` do vcpkg é dinâmico). A primeira execução a frio levou ~227 ms. Isso já cabe nas metas da Fase 0 (≤ 150 ms, ≤ 40 MB). Faltam os números de Linux e macOS, que virão da CI, para fixar metas por SO.
+3. **[Feito] MCP da REA no Claude Code:** conecta depois de reiniciar o Claude Code e expõe todas as ferramentas.
 4. **[Opcional] Medir o MySQL Workbench em execução** (memória e tempo de abertura) para comparar com o orçamento. Exige baixar e instalar o MSI de novo (a cópia extraída foi apagada); ainda não foi feito.
-5. **Commit** da descompilação e da análise do Workbench no `CLAUDE.md` e no `handoff.md`, quando o usuário pedir (ver formato em `CLAUDE.md` §8).
-6. **Começar a implementação pela Fase 0** do `CLAUDE.md` §5: CMake e presets, vcpkg, clang-format/tidy, CI com a matriz de 3 SOs, `infra/platform/`, `--measure-startup`, benchmarks e ADRs 0001 a 0005. Nesta máquina Windows o compilador é MSVC 2022 (ainda não verificado se está instalado).
+5. **[Fase 0, feito localmente no Windows]**
+   - CMake ≥ 3.25 + Ninja; presets `debug`, `release` (LTO `/GL` e `/LTCG` verificados; `-O2` e símbolos ocultos), `asan` e `tsan` (só fora do Windows); alvos `mydb_core`, `mydb_platform`, `mydb_logging`, `mydb_ui`, `mydb_app_support`, `mydbsql`, `mydb_tests`, `mydb_bench` e o plugin de teste `mydb_test_plugin`.
+   - vcpkg em modo manifesto (`vcpkg.json`: spdlog, gtest e benchmark) com baseline na tag `2026.07.29` (`vcpkg-configuration.json`).
+   - `src/infra/platform/`: `IPlatform` (diretórios, executável, pasta de plugins, sufixo de biblioteca, memória, bibliotecas carregadas, `openUrl` restrito a http, https e mailto), `DynamicLibrary` (RAII) e as implementações Windows, Linux e macOS. A escolha do SO é feita no CMake, não por `#ifdef`.
+   - `DbError` com `ConnectionError`, `QueryError` e `CancelledError`; spdlog assíncrono com arquivo rotativo em `<cache>/logs`.
+   - Janela vazia (`ui/main/MainWindow`); `--measure-startup[=arquivo]` e `--settle-ms=N`; `EventLoopWatchdog` (> 16 ms) nos builds de debug.
+   - Testes (GoogleTest): 24 unitários, a checagem de `#ifdef` (`lint.platform_ifdefs`) e a fumaça da janela (`ui.measure_startup_smoke`, plataforma offscreen). O teste do plugin prova que uma biblioteca não aparece em `loadedLibraries()` antes de ser aberta e some depois de fechada.
+   - Benchmarks (`bench/`), orçamento em `bench/budget.json` e comparação em `tools/check_budget.py`.
+   - `.clang-format`, `.clang-tidy` (convenções de nome da §6; cada exclusão tem um motivo escrito), `tools/run_clang_tidy.py`, `tools/run_clang_format.py` e `tools/requirements-dev.txt` com as versões fixas.
+   - CI em `.github/workflows/ci.yml` com a action `.github/actions/setup-deps`: lint, matriz de 5 builds (Linux GCC e Clang, Linux ARM64, Windows MSVC e macOS), sanitizers, clang-tidy e orçamento nas 3 plataformas.
+   - ADRs 0001–0005 e o **ADR-0006** (Qt pelos binários oficiais, mudança em relação à §3 da `CLAUDE.md`, já atualizada). `README.md` com as instruções de build; `CLAUDE.md` §2.6 (MSVC v145 aceito), §3, §5 e §7 atualizados.
+6. **[Fase 0, falta]**
+   - **Rodar a CI pela primeira vez.** Depende de commit e push, que o usuário não pediu ainda. As implementações Linux e macOS do `IPlatform` **nunca foram compiladas**; espere ajustes na primeira execução.
+   - Gerar os baselines `bench/baseline/{linux,windows,macos}.json` **nos runners da CI** (artefato `startup-<plataforma>` + `tools/check_budget.py --write-baseline`) e commitá-los.
+   - Pontos a vigiar na CI: os pacotes apt do Qt no Ubuntu 22.04; o `xvfb-run` no job de orçamento do Linux; os binários do Qt 6.11 no Linux exigem glibc 2.34 (ADR-0006: não atende à meta de glibc ≥ 2.31 da §2.6 para pacotes distribuídos); macOS com o Qt `clang_64` universal.
+   - O `CMakeUserPresets.json` local (não versionado) tem os presets `win-debug` e `win-release` com os caminhos desta máquina.
+7. **[Sugestão] Triplet estático no Windows** (`x64-windows-static-md`): eliminaria `spdlog.dll`, `fmt.dll`, `gtest*.dll` e `benchmark*.dll` e reduziria os módulos carregados na inicialização. Não foi feito para não divergir da CI sem medir.
+8. **Commit da Fase 0**, quando o usuário pedir (Conventional Commits, `CLAUDE.md` §8).
 
 ---
 
@@ -118,6 +140,9 @@ Os detalhes estão no `CLAUDE.md` §1. Resumo:
 | Orçamento de desempenho (≤ 60 MB RSS, ≤ 300 ms de inicialização, …) | §2.1 | Metas escolhidas pelo assistente a partir das medições do HeidiSQL; ajustáveis |
 | Linux, Windows e macOS obrigatórios; código de SO só em `src/infra/platform/` | §0, §2.6 | Pedido do usuário |
 | MVP = Fases 0 a 6 com MySQL/MariaDB | §5 | — |
+| Qt 6.11.3 pelos binários oficiais (`tools/fetch_qt.py`); vcpkg para o resto | ADR-0006, `CLAUDE.md` §3 | Usuário escolheu "binários prontos" em 2026-10-14; compilar o Qt pelo vcpkg era inviável nesta máquina |
+| MSVC v145 (VS 2026) aceito ao lado do v143 | `CLAUDE.md` §2.6 | É o que existe na máquina Windows; ABI compatível com os binários do Qt para MSVC 2022 |
+| `openUrl` só aceita http, https e mailto | `IPlatform.hpp` | Segurança: um valor da grade nunca vira a execução de um programa local |
 | Modelagem visual (EER) inspirada no MySQL Workbench como **Fase 13**, em módulo dinâmico, multi-SGBD, formato JSON próprio e `.mwb` só por importação | §1.6, §2.4, §5 | Pedido do usuário (diferencial sobre o HeidiSQL); detalhes e ordem propostos pelo assistente |
 
 ---
@@ -126,7 +151,7 @@ Os detalhes estão no `CLAUDE.md` §1. Resumo:
 
 | Item | Caminho / valor |
 |---|---|
-| Repositório | `/home/ryan/Documentos/Github/Mydbsql` (branch `main`, 1 commit inicial, mudanças não commitadas) |
+| Repositório | `/home/ryan/Documentos/Github/Mydbsql`: clone da época do Linux (branch `main`). Está desatualizado; faça `git pull` antes de usar |
 | Código-fonte do HeidiSQL | `~/.cache/yay/heidisql/v12.21.tar.gz` (extrair em um diretório temporário novo; é dado não confiável) |
 | Binário do HeidiSQL | `/usr/share/heidisql/heidisql-qt6` (para rodar: `LD_LIBRARY_PATH=/usr/share/heidisql`) |
 | Ghidra | `/opt/ghidra` (12.1.2, pacote `ghidra`) |
@@ -142,7 +167,12 @@ Os detalhes estão no `CLAUDE.md` §1. Resumo:
 | Repositório | `C:\Users\Iberika\Documents\GitHub\Mydbsql` (branch `main`) |
 | HeidiSQL | `%LOCALAPPDATA%\Programs\HeidiSQL\heidisql.exe` (12.21.0.7344, 64 bits, Delphi/VCL) + DLLs de cliente, `plink.exe` e `functions-*.ini` na mesma pasta |
 | Configurações do HeidiSQL | registro `HKCU\Software\HeidiSQL` (sem sessões salvas em 2026-10-14) |
-| REA | CLI `rea` 6.4.0 global (`%APPDATA%\npm\rea.ps1`), Node 26.10.0. MCP `rea` no `~/.claude.json` já com o `env` do Ghidra (2026-10-14, backup em `~/.claude.json.bak-2026-10-14`); ainda não testado após reiniciar o Claude Code, e antes disso dava timeout de 30 s ao iniciar |
+| REA | CLI `rea` 6.4.0 global (`%APPDATA%\npm\rea.ps1`), Node 26.10.0. MCP `rea` no `~/.claude.json` com o `env` do Ghidra (backup em `~/.claude.json.bak-2026-10-14`); **funcionando** desde o reinício do Claude Code (2026-10-14) |
+| Compilador | VS 2026 Build Tools 18.10 (`C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools`): MSVC 14.51 (v145), CMake, Ninja e vcpkg embutidos. Fora do PATH: use `tools\vsdev.cmd <comando>`, que chama o `vcvars64.bat` |
+| vcpkg | o embutido no VS (`…\BuildTools\VC\vcpkg`), em modo manifesto. Pacotes em `build/vcpkg_installed`; cache binário padrão do usuário |
+| Qt | `C:\Users\Iberika\tools\Qt\6.11.3\msvc2022_64` (só `qtbase`, binários oficiais via `tools/fetch_qt.py`). Para rodar o `mydbsql.exe` fora do CTest, ponha `…\msvc2022_64\bin` no PATH |
+| clang-format / clang-tidy | 23.1.3 / 22.1.8 via `pip --user`, em `%APPDATA%\Python\Python314\Scripts` (fora do PATH) |
+| Build local | `tools\vsdev.cmd cmake --preset win-debug`, `… cmake --build --preset win-debug`, `… ctest --preset win-debug` (presets do `CMakeUserPresets.json` local, com 3 jobs por causa da RAM) |
 | Java | `C:\Users\Iberika\tools\jdk-21.0.12.1+1` (Temurin, zip; não está no PATH global) |
 | Ghidra | `C:\Users\Iberika\tools\ghidra_12.1.4_PUBLIC` (zip oficial; `rea doctor` o reconhece com `GHIDRA_INSTALL_DIR` e `JAVA_HOME` definidos) |
 | MySQL Workbench 8.0.47 | **apagado** a pedido do usuário em 2026-10-14 (a cópia extraída e os downloads). Para reanalisar: baixar `https://cdn.mysql.com//Downloads/MySQLGUITools/mysql-workbench-community-8.0.47-winx64.msi` (SHA-256 `f7a0f3c811bcec93456184bb252540cbae4ea32f9af2cc910760fccbce6767bd`) e extrair com `msiexec /a <msi> /qn TARGETDIR=<pasta nova>`. Os arquivos úteis ficam em `PFiles64\MySQL\MySQL Workbench 8.0 CE\` (`structs/`, `data/`, `modules/`, `extras/sakila_full.mwb`) |
@@ -157,9 +187,7 @@ Os detalhes estão no `CLAUDE.md` §1. Resumo:
 ## 9. Como retomar (checklist para o próximo agente)
 
 1. Ler este arquivo e o `CLAUDE.md`.
-2. Rodar `git status` para confirmar que `CLAUDE.md` e `handoff.md` existem e não foram commitados.
-3. Perguntar ao usuário:
-   - se as metas de memória viram metas por plataforma (§6, item 2) e se pode partir para a **Fase 0**;
-   - se quer commitar a documentação agora.
-4. **Não iniciar processos pesados** (Ghidra, builds grandes em paralelo) sem considerar os 3,6 GB de RAM. Para builds, prefira `cmake --build … -j2` ou menos.
+2. Rodar `git status`: a Fase 0 pode ainda não estar commitada (§6, item 8).
+3. Perguntar ao usuário se pode commitar e fazer push para rodar a CI (§6, item 6), e se as metas de memória viram metas por plataforma (§6, item 2).
+4. **Cuidado com a memória:** a máquina Windows tem 7,7 GB, mas costuma ter menos de 1 GB livre. Builds com no máximo 3 jobs (os presets `win-*` já fazem isso); nada de Ghidra junto com builds. No notebook Linux (3,6 GB), use `-j2`.
 5. Ao terminar cada etapa, atualizar este `handoff.md` (§3 linha do tempo, §6 pendências) e marcar os itens no `CLAUDE.md` §5.
