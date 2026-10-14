@@ -4,7 +4,7 @@
 Entradas:
   --startup run1.json run2.json run3.json   saídas de `mydbsql --measure-startup=<arquivo>` (usa a mediana)
   --benchmarks bench.json                   saída de `mydb_bench --benchmark_out=<arquivo> --benchmark_out_format=json`
-  --budget bench/budget.json                limites absolutos da fase atual
+  --budget bench/budget.json                limites absolutos da fase atual ("platforms" sobrepõe por SO)
   --baseline bench/baseline/<plataforma>.json   valores de referência; regressão > tolerância falha
 
 Sem baseline (primeira execução numa plataforma), só os limites absolutos valem e o script imprime
@@ -69,8 +69,9 @@ def main() -> int:
     failures: list[str] = []
 
     print(f"Inicialização ({startup['platform']}, mediana de {startup['runs']}):")
+    limits = {**budget.get("startup", {}), **budget.get("platforms", {}).get(startup["platform"], {})}
     for metric in STARTUP_METRICS:
-        limit = budget.get("startup", {}).get(metric)
+        limit = limits.get(metric)
         value = startup[metric]
         status = "ok"
         if limit is not None and value > limit:
