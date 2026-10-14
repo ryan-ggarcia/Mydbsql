@@ -60,6 +60,21 @@ def find_repository(host: str, version: str, arch: str) -> tuple[str, ET.Element
     sys.exit(f"Pacote qt.qt6.{compact}.{arch} não encontrado em {candidates}")
 
 
+def extract_subdirs(package: ET.Element, version: str, arch_dir: str) -> dict[str, str]:
+    """Subpasta de destino de cada arquivo, segundo as operações Extract do Updates.xml.
+
+    Ex.: a ICU do Linux vai para lib/, embora o arquivo .7z não traga essa pasta.
+    """
+    prefix = f"@TargetDir@/{version}/{arch_dir}"
+    subdirs: dict[str, str] = {}
+    for operation in package.iter("Operation"):
+        arguments = [a.text or "" for a in operation.iter("Argument")]
+        if operation.get("name") != "Extract" or len(arguments) < 2 or not arguments[0].startswith(prefix):
+            continue
+        subdirs[arguments[1].strip()] = arguments[0][len(prefix):].strip("/")
+    return subdirs
+
+
 def wanted(archive: str, modules: list[str]) -> bool:
     if archive.startswith("icu-"):  # dependência do qtbase no Linux
         return True
@@ -88,7 +103,9 @@ def main() -> int:
     if missing:
         sys.exit(f"Módulos sem arquivo no pacote: {missing}")
 
-    target = args.out / args.version / ARCH_DIRS.get(args.arch, args.arch)
+    arch_dir = ARCH_DIRS.get(args.arch, args.arch)
+    target = args.out / args.version / arch_dir
+    subdirs = extract_subdirs(package, args.version, arch_dir)
     target.mkdir(parents=True, exist_ok=True)
     package_url = f"{repo}/{package.findtext('Name')}"
 
@@ -103,7 +120,7 @@ def main() -> int:
             local = Path(tmp) / file_name
             local.write_bytes(data)
             with py7zr.SevenZipFile(local) as archive_file:
-                archive_file.extractall(target)
+                archive_file.extractall(target / subdirs.get(archive, ""))
             print(f"ok {file_name} ({len(data) // 1024} KiB, sha1 {actual})", file=sys.stderr)
 
     # O qmake procura o prefixo pelo qt.conf; o CMake não precisa dele.

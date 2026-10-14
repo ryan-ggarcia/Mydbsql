@@ -29,6 +29,10 @@ target_compile_definitions(mydbsql PRIVATE
     MYDB_DEBUG_BUILD=$<IF:$<CONFIG:Debug>,1,0>)
 mydb_set_warnings(mydbsql)
 
+if(UNIX AND NOT APPLE)
+    target_link_options(mydbsql PRIVATE "LINKER:-rpath-link,$<TARGET_FILE_DIR:Qt6::Core>")
+endif()
+
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
     set_target_properties(mydbsql PROPERTIES WIN32_EXECUTABLE ON)
 endif()

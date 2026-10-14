@@ -45,10 +45,10 @@ DynamicLibrary::Symbol DynamicLibrary::symbol(const char* name) const noexcept {
     void* address = ::dlsym(m_handle, name);
     // dlsym devolve void*; a cópia de bytes evita a conversão objeto→função, que o C++ só admite
     // como "conditionally-supported".
-    Symbol function = nullptr;
-    static_assert(sizeof(function) == sizeof(address));
-    std::memcpy(&function, &address, sizeof(function));
-    return function;
+    Symbol result = nullptr;
+    static_assert(sizeof(result) == sizeof(address));
+    std::memcpy(&result, &address, sizeof(result));
+    return result;
 }
 
 void DynamicLibrary::close() noexcept {
