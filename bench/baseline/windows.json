@@ -1,0 +1,19 @@
+{
+  "platform": "windows",
+  "tolerance": 0.1,
+  "tolerances": {
+    "startup_ms": 1.0,
+    "benchmarks": 1.0
+  },
+  "startup": {
+    "startup_ms": 47.0,
+    "rss_kb": 37248,
+    "anon_kb": 10472,
+    "libs_loaded": 81
+  },
+  "benchmarks": {
+    "BM_LoadedLibraries": 16521.1,
+    "BM_ProcessMemory": 247.1,
+    "BM_StartupReportToJson": 526.9
+  }
+}

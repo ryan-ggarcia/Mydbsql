@@ -2,15 +2,15 @@
 
 Contexto para qualquer agente de IA (ou pessoa) retomar o trabalho. **Leia este arquivo inteiro e depois o `CLAUDE.md`**, que é a fonte de verdade do projeto. Este arquivo descreve *o que aconteceu e o que falta*; o `CLAUDE.md` descreve *o que construir e como*.
 
-Última atualização: 2026-10-14, após o início da **Fase 0** (fundação do código) na máquina Windows.
+Última atualização: 2026-10-14, com a **Fase 0 concluída** (CI verde nas 3 plataformas).
 
 ---
 
 ## 1. Resumo em 30 segundos
 
 - **Projeto:** Mydbsql, um cliente gráfico de bancos de dados inspirado no HeidiSQL, a ser escrito **do zero em C++20**, orientado a objetos, com **SOLID**, **leve, rápido, fácil de estender** e **compatível com Linux, Windows e macOS**.
-- **Estado do repositório:** toda a análise está commitada (até `e2c2346`). A **Fase 0 está em andamento e não foi commitada**: CMake, presets, vcpkg, `infra/platform`, logging, `DbError`, janela vazia com `--measure-startup`, testes, benchmarks, CI e ADRs 0001–0006 (§3, item 9).
-- **Fase atual:** **Fase 0**. No Windows tudo compila sem warnings (`/W4 /WX`), os 26 testes passam, o clang-tidy está limpo e a janela vazia cabe no orçamento. Falta rodar a CI pela primeira vez, que é o único jeito de validar Linux e macOS a partir desta máquina (§6). A análise do HeidiSQL e do MySQL Workbench está concluída (`CLAUDE.md` §1.5 e §1.6).
+- **Estado do repositório:** análise e **Fase 0** commitadas e no GitHub (`main`). Fase 0: CMake, presets, vcpkg, `infra/platform`, logging, `DbError`, janela vazia com `--measure-startup`, testes, benchmarks, CI e ADRs 0001–0006 (§3, item 9).
+- **Fase atual:** **Fase 0 concluída** em 2026-10-14. CI verde nos 12 jobs (Linux x86-64 GCC e Clang, Linux ARM64, Windows MSVC, macOS, sanitizers, clang-tidy, lint e orçamento nas 3 plataformas). Próximo passo: **Fase 1** (§6, item 8). A análise do HeidiSQL e do MySQL Workbench está concluída (`CLAUDE.md` §1.5 e §1.6).
 
 ---
 
@@ -104,10 +104,10 @@ Os detalhes estão no `CLAUDE.md` §1. Resumo:
    - *Como são montados os nomes das libs?* **Respondida (pseudocódigo):** uma regex por família, varrendo `*.dll` na pasta do app, com cache por tipo de conexão; MSSQL via provedores OLE DB.
    - *Como é montado o comando SSH?* **Respondida (pseudocódigo):** ordem completa dos argumentos, porta local alternativa, respostas automáticas a prompts e máscara da senha só no log.
    - **Regra:** é uma reimplementação limpa. Use a descompilação só para entender comportamento; **nunca** copie lógica, código ou estruturas para o Mydbsql (`CLAUDE.md` §0). O pseudocódigo não vai para o repositório.
-2. **[Decidido] Metas por plataforma** (`CLAUDE.md` §2.1; `bench/budget.json`, seção `platforms`). Windows (local, release, mediana de 3 execuções aquecidas): ~67 ms, ~32,6 MB de working set, ~10,4 MB de *private bytes*, 78 módulos (a primeira execução, a frio, levou ~227 ms). macOS (CI): ~341 ms, ~95 MB de RSS, ~24,5 MB de footprint, 1045 imagens; metas provisórias de ≤ 400 ms, ≤ 120 MB e ≤ 25 MB até medir num Mac real. Linux: aguardando a CI ficar verde.
+2. **[Decidido] Metas por plataforma** (`CLAUDE.md` §2.1; `bench/budget.json`, seção `platforms`; baselines em `bench/baseline/`). Janela vazia em release, medida na CI (`a671756`): Linux 15,6 ms, 32,0 MB de RSS, 5,6 MB anônima, 63 libs; Windows 47 ms, 36,4 MB de working set, 10,2 MB privada, 81 módulos; macOS 164–341 ms, 93 MB de RSS, 24,2 MB de footprint, 1045 imagens. Metas do macOS provisórias (≤ 400 ms, ≤ 120 MB, ≤ 25 MB) até medir num Mac real.
 3. **[Feito] MCP da REA no Claude Code:** conecta depois de reiniciar o Claude Code e expõe todas as ferramentas.
 4. **[Opcional] Medir o MySQL Workbench em execução** (memória e tempo de abertura) para comparar com o orçamento. Exige baixar e instalar o MSI de novo (a cópia extraída foi apagada); ainda não foi feito.
-5. **[Fase 0, feito localmente no Windows]**
+5. **[Fase 0, concluída em 2026-10-14]**
    - CMake ≥ 3.25 + Ninja; presets `debug`, `release` (LTO `/GL` e `/LTCG` verificados; `-O2` e símbolos ocultos), `asan` e `tsan` (só fora do Windows); alvos `mydb_core`, `mydb_platform`, `mydb_logging`, `mydb_ui`, `mydb_app_support`, `mydbsql`, `mydb_tests`, `mydb_bench` e o plugin de teste `mydb_test_plugin`.
    - vcpkg em modo manifesto (`vcpkg.json`: spdlog, gtest e benchmark) com baseline na tag `2026.07.29` (`vcpkg-configuration.json`).
    - `src/infra/platform/`: `IPlatform` (diretórios, executável, pasta de plugins, sufixo de biblioteca, memória, bibliotecas carregadas, `openUrl` restrito a http, https e mailto), `DynamicLibrary` (RAII) e as implementações Windows, Linux e macOS. A escolha do SO é feita no CMake, não por `#ifdef`.
@@ -118,14 +118,15 @@ Os detalhes estão no `CLAUDE.md` §1. Resumo:
    - `.clang-format`, `.clang-tidy` (convenções de nome da §6; cada exclusão tem um motivo escrito), `tools/run_clang_tidy.py`, `tools/run_clang_format.py` e `tools/requirements-dev.txt` com as versões fixas.
    - CI em `.github/workflows/ci.yml` com a action `.github/actions/setup-deps`: lint, matriz de 5 builds (Linux GCC e Clang, Linux ARM64, Windows MSVC e macOS), sanitizers, clang-tidy e orçamento nas 3 plataformas.
    - ADRs 0001–0005 e o **ADR-0006** (Qt pelos binários oficiais, mudança em relação à §3 da `CLAUDE.md`, já atualizada). `README.md` com as instruções de build; `CLAUDE.md` §2.6 (MSVC v145 aceito), §3, §5 e §7 atualizados.
-6. **[Fase 0, falta]**
-   - **Primeira execução da CI (2026-10-14, `e1f37ba`):** 6 de 12 jobs verdes (Windows completo, macOS, sanitizers e lint). Causas das falhas, encontradas pelas anotações do `tools/ci_step.py` e corrigidas em `bba7e44`, `73e4806` e no commit seguinte: `-Wshadow` do GCC em `DynamicLibraryPosix.cpp`; a ICU do Qt no Linux, extraída fora de `lib/` (o `fetch_qt.py` agora respeita as operações `Extract` do `Updates.xml`); o CMake 3.31 do runner ARM64, antigo demais para a baseline do vcpkg; e o orçamento do macOS (agora com metas por plataforma). **Terceira execução (`aebbf5a`): 11 de 12 jobs verdes**, incluindo Linux GCC/Clang, ARM64 e o orçamento nas 3 plataformas; o clang-tidy acusou 3 achados no código POSIX, corrigidos em `1067604`. Depois que a CI ficar toda verde, crie os `bench/baseline/<plataforma>.json` a partir das anotações `notice` "Baseline sugerido" do job de orçamento. **O usuário faz o push**; depois, confira a nova execução pelas anotações (`/repos/ryan-ggarcia/Mydbsql/check-runs/<job>/annotations`, públicas; os logs exigem login).
-   - **Rodar a CI pela primeira vez.** Depende de commit e push, que o usuário não pediu ainda. As implementações Linux e macOS do `IPlatform` **nunca foram compiladas**; espere ajustes na primeira execução.
-   - Gerar os baselines `bench/baseline/{linux,windows,macos}.json` **nos runners da CI** (artefato `startup-<plataforma>` + `tools/check_budget.py --write-baseline`) e commitá-los.
-   - Pontos a vigiar na CI: os pacotes apt do Qt no Ubuntu 22.04; o `xvfb-run` no job de orçamento do Linux; os binários do Qt 6.11 no Linux exigem glibc 2.34 (ADR-0006: não atende à meta de glibc ≥ 2.31 da §2.6 para pacotes distribuídos); macOS com o Qt `clang_64` universal.
+6. **[Fase 0] Como a CI ficou verde** (12 jobs verdes desde `a671756`):
+   - Os logs dos jobs exigem login, mas as anotações são públicas. Por isso `tools/ci_step.py` publica as linhas de erro de cada passo e `tools/check_budget.py` publica a medição (`::notice` "Medição (<plataforma>)"). Leia em `https://api.github.com/repos/ryan-ggarcia/Mydbsql/check-runs/<job>/annotations`.
+   - Falhas corrigidas: `-Wshadow` do GCC; a ICU do Qt no Linux extraída fora de `lib/` (o `fetch_qt.py` agora segue as operações `Extract` do `Updates.xml`); o CMake 3.31 do runner ARM64, antigo demais para a baseline do vcpkg (o job instala o CMake 4 via pip); achados do clang-tidy no código POSIX; o orçamento do macOS (metas por plataforma).
+   - Baselines tirados das anotações da CI. Tolerância de 10% para memória e bibliotecas; até 2× para o tempo de início e os benchmarks, porque o tempo no macOS variou 2× entre duas execuções (ADR-0005).
+   - Pontos a vigiar: os binários do Qt 6.11 no Linux exigem glibc 2.34 (ADR-0006: não atende à meta de glibc ≥ 2.31 da §2.6 para pacotes distribuídos); avisos de Node 20 nas actions `checkout@v4`, `setup-python@v5`, `cache@v4` e `upload-artifact@v4` (só aviso; atualizar quando houver versões com Node 24).
+   - **O usuário faz o push.** O agente commita localmente e acompanha a CI depois.
    - O `CMakeUserPresets.json` local (não versionado) tem os presets `win-debug` e `win-release` com os caminhos desta máquina.
 7. **[Sugestão] Triplet estático no Windows** (`x64-windows-static-md`): eliminaria `spdlog.dll`, `fmt.dll`, `gtest*.dll` e `benchmark*.dll` e reduziria os módulos carregados na inicialização. Não foi feito para não divergir da CI sem medir.
-8. **Commit da Fase 0**, quando o usuário pedir (Conventional Commits, `CLAUDE.md` §8).
+8. **Próximo passo: Fase 1** (`CLAUDE.md` §5): modelos do core, interfaces da §4.2, `SqlTokenizer`/`SqlSplitter` com testes extensos, `sdk/` (`IModule`, `ModuleContext`, registries, `ModuleLoader`, `EventBus`) e a checagem de dependências entre módulos.
 
 ---
 

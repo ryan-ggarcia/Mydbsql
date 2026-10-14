@@ -1,0 +1,19 @@
+{
+  "platform": "linux",
+  "tolerance": 0.1,
+  "tolerances": {
+    "startup_ms": 1.0,
+    "benchmarks": 1.0
+  },
+  "startup": {
+    "startup_ms": 15.6,
+    "rss_kb": 32764,
+    "anon_kb": 5752,
+    "libs_loaded": 63
+  },
+  "benchmarks": {
+    "BM_LoadedLibraries": 46868.1,
+    "BM_ProcessMemory": 86412.9,
+    "BM_StartupReportToJson": 481.6
+  }
+}

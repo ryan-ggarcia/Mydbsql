@@ -82,11 +82,14 @@ def main() -> int:
 
     if args.baseline.exists():
         baseline = load(args.baseline)
-        tolerance = float(baseline.get("tolerance", 0.10))
+        default_tolerance = float(baseline.get("tolerance", 0.10))
+        overrides = baseline.get("tolerances", {})
         for metric in STARTUP_METRICS:
             reference = baseline.get("startup", {}).get(metric)
+            tolerance = float(overrides.get(metric, default_tolerance))
             if reference and startup[metric] > reference * (1 + tolerance):
                 failures.append(f"{metric}: {startup[metric]} > baseline {reference} +{tolerance:.0%}")
+        tolerance = float(overrides.get("benchmarks", default_tolerance))
         for name, reference in baseline.get("benchmarks", {}).items():
             value = benchmarks.get(name)
             if value is None:
@@ -101,6 +104,7 @@ def main() -> int:
     suggested = {
         "platform": startup["platform"],
         "tolerance": 0.10,
+        "tolerances": {"startup_ms": 1.0, "benchmarks": 1.0},
         "startup": {metric: startup[metric] for metric in STARTUP_METRICS},
         "benchmarks": {name: round(value, 1) for name, value in sorted(benchmarks.items())},
     }
@@ -108,11 +112,11 @@ def main() -> int:
         args.baseline.parent.mkdir(parents=True, exist_ok=True)
         args.baseline.write_text(json.dumps(suggested, indent=2) + "\n", encoding="utf-8")
         print(f"Baseline gravado em {args.baseline}")
-    elif not args.baseline.exists():
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        # Anotações são públicas; os artefatos e os logs exigem login.
+        print(f"::notice title=Medição ({startup['platform']})::{json.dumps(suggested)}")
+    if not args.write_baseline and not args.baseline.exists():
         print("Baseline sugerido:\n" + json.dumps(suggested, indent=2))
-        if os.environ.get("GITHUB_ACTIONS") == "true":
-            # Anotações são públicas; os artefatos e os logs exigem login.
-            print(f"::notice title=Baseline sugerido ({startup['platform']})::{json.dumps(suggested)}")
 
     if failures:
         print("\nFALHOU:\n  " + "\n  ".join(failures), file=sys.stderr)

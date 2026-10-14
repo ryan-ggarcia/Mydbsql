@@ -18,5 +18,6 @@
 
 ## Consequências
 
-- Os runners compartilhados da CI têm ruído. A tolerância de 10% pode precisar de repetições extras ou de um ajuste por métrica. Isso será revisto com dados reais.
+- Os runners compartilhados da CI têm ruído: no macOS, o tempo de início variou de 341 ms para 164 ms entre duas execuções iguais. Por isso os baselines aceitam tolerância por métrica (`tolerances`): memória e bibliotecas carregadas continuam com 10%; o tempo de início e os benchmarks aceitam até 2× (tolerância 1,0). Os limites absolutos de `bench/budget.json` continuam valendo para o tempo de início.
+- O orçamento tem metas por plataforma (seção `platforms` de `bench/budget.json`), decididas pelo usuário em 2026-10-14: no macOS, o RSS inclui páginas compartilhadas dos frameworks do sistema.
 - Enquanto um baseline não existe para uma plataforma, só os limites absolutos são conferidos, e o script imprime o baseline sugerido.

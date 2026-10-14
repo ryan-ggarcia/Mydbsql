@@ -641,14 +641,14 @@ A partir da Fase 1, toda funcionalidade entra como **módulo** (§2.4). Se uma t
 ### Fase 0 — Fundação (infra do projeto)
 - [x] CMake + presets (`debug`, `release`, `asan`, `tsan`); vcpkg manifest; alvo `mydb_core` (lib), `mydbsql` (exe), `mydb_tests`.
 - [x] `.clang-format`, `.clang-tidy` (checks `modernize-*`, `cppcoreguidelines-*`, `bugprone-*`, `performance-*`, `readability-*`).
-- [ ] GitHub Actions com a matriz da §2.6 (Linux x86-64/ARM64, Windows, macOS): build + testes + clang-tidy + sanitizers. *(`.github/workflows/ci.yml` escrito; falta a primeira execução, que depende de um push.)*
-- [ ] `infra/platform/` com `IPlatform` e as três implementações (Linux, Windows, macOS): caminhos, libs dinâmicas, memória, bibliotecas carregadas, abrir URL; checagem de CI que proíbe `#ifdef` de SO fora dessa pasta. *(Windows compilado e testado; Linux e macOS escritos, aguardando a CI. A checagem de `#ifdef` já roda no CTest.)*
+- [x] GitHub Actions com a matriz da §2.6 (Linux x86-64/ARM64, Windows, macOS): build + testes + clang-tidy + sanitizers. *(12 jobs verdes desde `a671756`.)*
+- [x] `infra/platform/` com `IPlatform` e as três implementações (Linux, Windows, macOS): caminhos, libs dinâmicas, memória, bibliotecas carregadas, abrir URL; checagem de CI que proíbe `#ifdef` de SO fora dessa pasta.
 - [x] spdlog configurado; `DbError` com hierarquia de exceções (`ConnectionError`, `QueryError`, `CancelledError`).
 - [x] ADR-0001: arquitetura em camadas; ADR-0002: Qt 6 Widgets; ADR-0003: drivers nativos sem QtSql; ADR-0004: módulos e plugins (§2.4); ADR-0005: orçamento de desempenho (§2.1). Extra: ADR-0006, Qt pelos binários oficiais.
-- [ ] Flag `--measure-startup` (JSON com `startup_ms`, `rss_kb`, `anon_kb`, `libs_loaded`) + job de CI que compara com `bench/baseline.json`. *(Flag e `tools/check_budget.py` prontos e medidos no Windows; o job `startup-budget` e os baselines por plataforma, em `bench/baseline/<plataforma>.json`, dependem da primeira execução da CI.)*
+- [x] Flag `--measure-startup` (JSON com `startup_ms`, `rss_kb`, `anon_kb`, `libs_loaded`) + job de CI que compara com o baseline de cada plataforma (`bench/baseline/<plataforma>.json`).
 - [x] Google Benchmark configurado em `bench/`; watchdog do *event loop* (> 16 ms) em builds de debug.
 - [x] Release com LTO e `-fvisibility=hidden`.
-- **Pronto quando:** `cmake --preset debug && cmake --build --preset debug && ctest --preset debug` passa, a janela vazia abre e `--measure-startup` mostra ≤ 150 ms e ≤ 40 MB de RSS **nas três plataformas**.
+- **Pronto quando:** `cmake --preset debug && cmake --build --preset debug && ctest --preset debug` passa, a janela vazia abre e `--measure-startup` mostra ≤ 150 ms e ≤ 40 MB de RSS **nas três plataformas**. *(Concluída em 2026-10-14. Linux e Windows cumprem as metas; o macOS tem metas próprias por decisão do usuário, §2.1.)*
 
 ### Fase 1 — Núcleo de domínio e SQL (`core/`)
 - [ ] Modelos: `DbObject` (tipo, nome, banco, linhas, tamanho, datas), `Column`, `DataType` (+ categorias inteiro, real, texto, binário, temporal, espacial, outros), `Index`, `ForeignKey`, `CheckConstraint`, `TableDefinition`, `RoutineParam`.
