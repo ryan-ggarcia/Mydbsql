@@ -2,22 +2,23 @@
 
 Contexto para qualquer agente de IA (ou pessoa) retomar o trabalho. **Leia este arquivo inteiro e depois o `CLAUDE.md`**, que é a fonte de verdade do projeto. Este arquivo descreve *o que aconteceu e o que falta*; o `CLAUDE.md` descreve *o que construir e como*.
 
-Última atualização: 2026-10-13, após a segunda queda da sessão.
+Última atualização: 2026-10-14, após a análise do build Windows na máquina nova.
 
 ---
 
 ## 1. Resumo em 30 segundos
 
 - **Projeto:** Mydbsql, um cliente gráfico de bancos de dados inspirado no HeidiSQL, a ser escrito **do zero em C++20**, orientado a objetos, com **SOLID**, **leve, rápido, fácil de estender** e **compatível com Linux, Windows e macOS**.
-- **Estado do repositório:** só documentação. **Nenhum código foi escrito ainda.** Arquivos: `README.md` (do commit inicial), `CLAUDE.md` (plano completo) e este `handoff.md`. **Nada foi commitado** (o usuário não pediu commit).
-- **Fase atual:** análise do HeidiSQL concluída por código-fonte, binário (sem descompilação) e medições em execução. Plano escrito. **Pendente:** descompilação com Ghidra, que derrubou a máquina por falta de RAM (§5). Depois disso, começar a **Fase 0** do plano.
+- **Estado do repositório:** só documentação. **Nenhum código foi escrito ainda.** Arquivos: `README.md`, `CLAUDE.md` (plano completo) e este `handoff.md`. A documentação até 2026-10-13 já está commitada (`401c4fb`); as atualizações de 2026-10-14 (build Windows) **não** foram commitadas.
+- **Fase atual:** análise do HeidiSQL concluída por código-fonte, binário Linux, binário Windows (REA sem descompilação) e medições em execução nos dois SOs. Plano escrito. **Pendente:** decidir se vale descompilar (§5) e se as metas de memória viram metas por plataforma (§6). Depois, começar a **Fase 0**.
 
 ---
 
 ## 2. Quem é o usuário e como trabalhar com ele
 
 - Ryan Fidelis (GitHub `ryan-ggarcia`). Escreve em **português do Brasil**: responda e documente em pt-BR.
-- Ambiente: Arch Linux, GNOME no Wayland, VS Code com a extensão do Claude Code. **Notebook com 3,6 GB de RAM e 2 núcleos** (isso importa, veja §5).
+- Ambiente (até 2026-10-13): Arch Linux, GNOME no Wayland, VS Code com a extensão do Claude Code, **notebook com 3,6 GB de RAM e 2 núcleos** (veja §5).
+- Ambiente (desde 2026-10-14): **Windows 11 Home**, VS Code com a extensão do Claude Code, **7,7 GB de RAM e 8 núcleos lógicos** (na hora da análise, só ~0,9 GB livres). HeidiSQL 12.21 instalado em `%LOCALAPPDATA%\Programs\HeidiSQL`.
 - Pediu explicitamente o uso da skill **REA** (`reverse-engineer-anything`) para a engenharia reversa do HeidiSQL.
 - Prioridades que ele declarou, em ordem: (1) funcionalidades semelhantes ao HeidiSQL, (2) C++ + SOLID + OO, (3) app **leve e rápido**, (4) **fácil de adicionar funcionalidades**, (5) **compatível com Linux e demais SOs**.
 - Não faça commit, push nem mudanças em configurações do usuário (`~/.claude.json` etc.) sem ele pedir.
@@ -37,7 +38,12 @@ Contexto para qualquer agente de IA (ou pessoa) retomar o trabalho. **Leia este 
    - Adicionados o objetivo 0, uma regra na §0 e a §2.6 (matriz de SOs, 10 regras de portabilidade, CI e empacotamento), além de ajustes na stack, nas pastas e nas fases.
    - A análise com o Ghidra foi iniciada pela CLI da REA e **a sessão caiu**.
 5. **"O que você está fazendo agora?"** A análise tinha sido perdida. Foi reiniciada com `nohup setsid` e **a sessão caiu de novo**.
-6. **Pedido atual:** criar este `handoff.md`. Ao investigar, foi descoberta a causa das quedas: **OOM killer** (§5).
+6. Criado este `handoff.md`. Ao investigar, foi descoberta a causa das quedas: **OOM killer** (§5). Documentação commitada em `401c4fb`.
+7. **2026-10-14, máquina Windows:** "o Heidi já está na máquina, use todos os recursos da REA". Feito:
+   - O servidor MCP `rea` **não conectou** (timeout de 30 s na inicialização); foi usada a CLI `rea` 6.4.0 (instalada globalmente via npm). `rea doctor`: registro do Claude Code saudável; **Ghidra, Hopper e IDA ausentes; Java ausente**.
+   - REA sem engine: `inspect_artifact`, `inspect_managed_artifact` (código nativo, não .NET) e `inspect_pe_resources` (241 recursos). A captura de processo da REA (`capture-process`) **não roda em host Windows** na 6.4.0 (limitação declarada no código da REA).
+   - Complementos com ferramentas comuns: parse do PE (seções, imports, *delay imports*, overlay), extração de strings e medição em execução com PowerShell (3 execuções).
+   - Resultados no `CLAUDE.md` §1.5 ("Build Windows"), §1.4 e §2.1. **Descoberta principal:** no Windows o HeidiSQL usa ~47,6 MB de working set e ~24,6 MB de memória privada, ou seja, **já cumpre o orçamento do Mydbsql**; os ~296 MB do Linux vêm, provavelmente, do port Lazarus/Qt6.
 
 ---
 
@@ -75,19 +81,22 @@ Os detalhes estão no `CLAUDE.md` §1. Resumo:
 
 **Pergunte ao usuário qual opção ele prefere antes de rodar qualquer coisa pesada.**
 
+**Atualização 2026-10-14 (máquina Windows, 7,7 GB):** a RAM total chega perto dos 8 GB recomendados, mas **Ghidra e um JDK não estão instalados**, e a REA não instala engines nem Java. Para descompilar aqui seria preciso: instalar um JDK 21+ e o Ghidra 12.1.x, definir `GHIDRA_INSTALL_DIR`/`JAVA_HOME`, limitar o heap (`MAXMEM` em `support/launch.properties`, por exemplo 2–3 GB) e fechar apps pesados antes. **Só faça com autorização do usuário.** Das perguntas da §6, três já foram respondidas sem descompilar (veja lá), o que reforça a opção 1 (pular a descompilação).
+
 ---
 
 ## 6. Pendências (em ordem)
 
-1. **[Decidir com o usuário] Descompilação** (§5). Se for feita, as perguntas eram:
-   - De onde vêm os ~226 MB de memória anônima na inicialização? (Hipótese: leitura dos `functions-*.ini`, que somam ~1,1 MB, listas de imagens e formulários LCL criados de forma antecipada.)
-   - Por que a `libsqlite3` é carregada antes de qualquer conexão SQLite? Como são montados os nomes das libs dos bancos? (Pista: a string `libmariadb` aparece sem sufixo, e há `DefaultLibraryName` e `LibraryOrProvider`; o mais provável é que os nomes sejam montados ou varridos em tempo de execução.)
-   - Como é montado o comando do túnel SSH? (As strings com as opções do `ssh` já foram vistas.)
-   - Ao concluir, atualizar o `CLAUDE.md` §1.5 (hoje diz "ainda não há pseudocódigo").
+1. **[Decidir com o usuário] Descompilação** (§5). Situação das perguntas originais após a análise do build Windows (sem pseudocódigo):
+   - *De onde vêm os ~226 MB de memória anônima?* **Respondida em parte (inferência):** o build Windows/VCL usa ~24,6 MB de memória privada, então o grosso vem do port Lazarus/Qt6, não das estruturas do HeidiSQL. Só a descompilação (ou um profiler no Linux) confirmaria.
+   - *Por que a `libsqlite3` sobe na inicialização?* **Respondida em parte:** no Windows nenhuma DLL de banco é carregada na inicialização; o efeito é exclusivo do Linux (talvez dependência do Qt, não do HeidiSQL). Não confirmado.
+   - *Como são montados os nomes das libs?* **Respondida (strings):** varredura da pasta do app com regex (`^libpq.*\.dll$`, `^(gds32|ibclient|fbclient).*\.dll$`, prefixos `libmariadb`/`libmysql`).
+   - *Como é montado o comando SSH?* **Respondida (strings):** `plink` com `-pw "…"` na linha de comando, ou `ssh` com `-o StrictHostKeyChecking=no`. A ordem exata dos argumentos só com descompilação.
    - **Regra:** é uma reimplementação limpa. Use a descompilação só para entender comportamento; **nunca** copie lógica, código ou estruturas para o Mydbsql (`CLAUDE.md` §0).
-2. **[Oferecido, sem resposta] Configurar o MCP da REA com o Ghidra:** adicionar ao servidor `rea` no `~/.claude.json` o trecho `"env": {"GHIDRA_INSTALL_DIR": "/opt/ghidra", "JAVA_HOME": "/usr/lib/jvm/java-27-openjdk"}` e reiniciar o Claude Code. Hoje o servidor MCP roda sem essas variáveis, e só a **CLI** enxerga o Ghidra. Só faça se o usuário pedir.
-3. **Commit** do `CLAUDE.md` e do `handoff.md`, quando o usuário pedir (ver formato em `CLAUDE.md` §8).
-4. **Começar a implementação pela Fase 0** do `CLAUDE.md` §5: CMake e presets, vcpkg, clang-format/tidy, CI com a matriz de 3 SOs, `infra/platform/`, `--measure-startup`, benchmarks e ADRs 0001 a 0005.
+2. **[Decidir com o usuário] Metas de memória por plataforma** (`CLAUDE.md` §2.1, nota ⚠️). O build Windows do HeidiSQL já cumpre ≤ 60 MB / ≤ 25 MB. Sugestão: medir uma janela Qt 6 Widgets vazia na Fase 0 e então fixar metas por SO.
+3. **[Sem resposta] MCP da REA:** nesta máquina o servidor `rea` dá *timeout* de 30 s ao iniciar (provavelmente o `npx` baixando o pacote a cada início). Como a CLI `rea` 6.4.0 já está instalada globalmente, apontar o registro do Claude Code para ela (`rea mcp`) deve resolver; rode `rea setup --client claude_code --dry-run --json` e mostre o plano ao usuário antes de aplicar. Se o Ghidra for instalado, incluir `GHIDRA_INSTALL_DIR` e `JAVA_HOME` no `env` do servidor.
+4. **Commit** das atualizações de 2026-10-14 do `CLAUDE.md` e do `handoff.md`, quando o usuário pedir (ver formato em `CLAUDE.md` §8).
+5. **Começar a implementação pela Fase 0** do `CLAUDE.md` §5: CMake e presets, vcpkg, clang-format/tidy, CI com a matriz de 3 SOs, `infra/platform/`, `--measure-startup`, benchmarks e ADRs 0001 a 0005. Nesta máquina Windows o compilador é MSVC 2022 (ainda não verificado se está instalado).
 
 ---
 
@@ -119,6 +128,18 @@ Os detalhes estão no `CLAUDE.md` §1. Resumo:
 | REA via MCP | registrado em `~/.claude.json` como `npx -y rea-agents@6.4.0 mcp`, **sem** as variáveis do Ghidra |
 | Artefatos temporários da sessão anterior | `/tmp/claude-1000/.../scratchpad/` (`strings.txt` do binário, fontes extraídos). **São voláteis e podem não existir mais**; regenere se precisar (`strings -n 4 <binário>`) |
 | Ferramentas ausentes | `jq`, `xdotool` (use `python3 -I` para JSON) |
+
+**Máquina Windows (desde 2026-10-14):**
+| Item | Caminho / valor |
+|---|---|
+| Repositório | `C:\Users\Iberika\Documents\GitHub\Mydbsql` (branch `main`) |
+| HeidiSQL | `%LOCALAPPDATA%\Programs\HeidiSQL\heidisql.exe` (12.21.0.7344, 64 bits, Delphi/VCL) + DLLs de cliente, `plink.exe` e `functions-*.ini` na mesma pasta |
+| Configurações do HeidiSQL | registro `HKCU\Software\HeidiSQL` (sem sessões salvas em 2026-10-14) |
+| REA | CLI `rea` 6.4.0 global (`%APPDATA%\npm\rea.ps1`), Node 26.10.0; MCP `rea` não conecta (timeout) |
+| Ghidra / Java | **ausentes** |
+| Python | `C:\Python314\python.exe` (use `python -I`; para imprimir Unicode, `sys.stdout.reconfigure(encoding='utf-8')`) |
+| Shells | PowerShell 5.1 e Git Bash |
+| Artefatos da sessão de 2026-10-14 | scratchpad temporário da sessão (voláteis): JSON das evidências REA, `strings.txt`, `pe_imports.py`, `measure_heidi.ps1` e as amostras `run1..3`. Regenere se precisar |
 
 ---
 

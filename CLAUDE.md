@@ -38,9 +38,10 @@ Este arquivo é a fonte de verdade para quem trabalhar no repositório (humanos 
 ### 1.1 Origem da análise
 
 - Versão analisada: **HeidiSQL 12.21**, branch Lazarus/FreePascal (port multiplataforma; a partir da v13 o build Windows também sai dela).
-- Material, em duas frentes:
+- Material, em três frentes:
   1. **Código-fonte completo** (`v12.21.tar.gz`, `source/*.pas`, cerca de 64 mil linhas): arquitetura e funcionalidades (§1.2–1.3).
-  2. **Engenharia reversa do binário instalado** `/usr/share/heidisql/heidisql-qt6` (pacote AUR `heidisql-qt6` 12.21-2), com a skill REA, binutils e medições em execução (§1.5).
+  2. **Engenharia reversa do binário Linux** `/usr/share/heidisql/heidisql-qt6` (pacote AUR `heidisql-qt6` 12.21-2), com a skill REA, binutils e medições em execução (§1.5).
+  3. **Engenharia reversa do binário Windows** `heidisql.exe` 12.21.0.7344 64 bits (build Delphi/VCL), com a skill REA (inventário, recursos PE, checagem de código gerenciado), parse próprio do PE e medições em execução (§1.5).
 - UI: LCL (Lazarus), com **VirtualTreeView** nas grades e árvores e **SynEdit** no editor SQL.
 - Drivers: carrega as bibliotecas nativas do cliente em tempo de execução (`TDbLib`, via dlopen/LoadLibrary): libmysqlclient/libmariadb, libpq, sqlite3 (inclusive SQLCipher), FreeTDS (MSSQL) e fbclient (Interbase/Firebird).
 
@@ -97,7 +98,7 @@ Este arquivo é a fonte de verdade para quem trabalhar no repositório (humanos 
 **Encontrado só no binário (engenharia reversa, §1.5)**
 - **Histórico de queries** persistente, com retenção configurável em dias (`asQueryHistoryEnabled`, `asQueryHistoryKeepDays`, `TQueryHistory`) e ação "Clear query history".
 - **Formatador SQL online** opcional (`https://sqlformat.org/api/v1/format`), além do formatador local.
-- **Pesquisa na web** do termo selecionado (Google, Bing, DuckDuckGo, Ecosia, Baidu, usando o modelo `%query`).
+- **Pesquisa na web** do termo selecionado (Google, Bing, DuckDuckGo, Ecosia, Baidu; no build Windows também Yandex, Startpage e SearchEncrypt; usando o modelo `%query`).
 - Histórico de busca e substituição no editor (`asFindDialogSearchHistory`/`ReplaceHistory`).
 - Esquemas de cores do editor (`TAppColorScheme(s)`).
 
@@ -117,12 +118,16 @@ Este arquivo é a fonte de verdade para quem trabalhar no repositório (humanos 
 | UI depende de classes concretas de conexão | UI depende só de interfaces injetadas (**DIP**) |
 | Configurações globais acessadas em qualquer lugar (`AppSettings`) | `ISettingsStore` injetado; configurações tipadas por módulo |
 | Exportadores implementados como `case` dentro de um formulário | Uma classe `IResultExporter` por formato, registradas numa fábrica (**OCP**, **LSP**) |
-| ~226 MB de memória anônima privada só para exibir o gerenciador de sessões (§1.5) | Inicialização preguiçosa e orçamento de memória (§2) |
-| Bibliotecas carregadas antes de serem necessárias (a `libsqlite3` sobe na inicialização) | Driver só é carregado na primeira conexão daquele tipo (§2.2) |
-| Túnel SSH via processo externo (`ssh`/`plink` + `sshpass`) com `StrictHostKeyChecking=no` | libssh2 embutido, com verificação de host key |
+| ~226 MB de memória anônima privada só para exibir o gerenciador de sessões no port Linux/Qt6 (o build Windows/VCL fica em ~25 MB, §1.5) | Inicialização preguiçosa e orçamento de memória (§2); o toolkit de UI pesa tanto quanto o app, então o custo do Qt precisa ser medido desde a Fase 0 |
+| A janela principal (formulário de 677 KB, com 2 `TImageCollection`, 313 itens de menu e 160 ações) é criada, escondida, junto com o gerenciador de sessões | Janela principal criada só depois de conectar; menus e ações montados sob demanda a partir do `CommandRegistry` |
+| Bibliotecas carregadas antes de serem necessárias (a `libsqlite3` sobe na inicialização do build Linux) | Driver só é carregado na primeira conexão daquele tipo (§2.2) |
+| Túnel SSH via processo externo (`ssh`/`plink` + `sshpass`) com `StrictHostKeyChecking=no`; no Windows a senha vai na linha de comando do `plink` (`-pw "…"`), visível para outros processos | libssh2 embutido, com verificação de host key; senha nunca em argv |
+| As 34 traduções (`.mo`, ~3,4 MB) vão embutidas no executável | Traduções em arquivos `.qm` separados, carregados só para o idioma ativo |
 | Um executável monolítico de ~13 MB onde tudo é compilado junto | Núcleo pequeno + módulos registráveis (§2.4) |
 
 ### 1.5 Engenharia reversa do binário (evidências)
+
+#### Build Linux (Lazarus/Qt6)
 
 Alvo: `/usr/share/heidisql/heidisql-qt6`, ELF x86-64, *stripped*, SHA-256 `8c8ff0423a0843a9456ed97e21ea757f540a4459871ac963189f6bb9e7091b5f`. O pacote `heidisql-qt6-debug` também vem *stripped*, sem tabela de símbolos útil.
 
@@ -148,9 +153,50 @@ Alvo: `/usr/share/heidisql/heidisql-qt6`, ELF x86-64, *stripped*, SHA-256 `8c8ff
 | Threads | 12 |
 | Bibliotecas `.so` mapeadas | 113 (inclui `libsqlite3` sem nenhuma conexão SQLite aberta) |
 
-**Inferência:** a maior parte da memória privada vem de estruturas criadas na inicialização (listas de ícones, catálogos `functions-*.ini` com ~1,1 MB de texto parseado, formulários LCL instanciados de forma antecipada). Isso não foi confirmado por descompilação. Mesmo assim, define a linha de base que o Mydbsql precisa superar com folga (§2.1).
+**Inferência (revista após a medição no Windows, abaixo):** o mesmo HeidiSQL 12.21, compilado com Delphi/VCL no Windows, usa cerca de **1/10** da memória privada do port Linux (Lazarus + Qt6Pas). Logo, a maior parte dos ~226 MB do Linux vem provavelmente do port e do toolkit (LCL sobre Qt6, Qt, Wayland, fontes), e não das estruturas de dados do HeidiSQL. A carga da `libsqlite3` na inicialização também parece exclusiva do Linux: no Windows nenhuma DLL de banco é carregada. Nada disso foi confirmado por descompilação.
 
 **Efeito colateral das medições:** executar o binário criou `~/.config/heidisql/` (com `tabs.ini` vazio e `Snippets/`).
+
+#### Build Windows (Delphi/VCL), analisado em 2026-10-14
+
+Alvo: `%LOCALAPPDATA%\Programs\HeidiSQL\heidisql.exe`, PE32+ x86-64, **HeidiSQL 12.21.0.7344 64 Bit** (recurso de versão), SHA-256 `d4bc6b81906832aeed79e054ed094f5e15449c8fa91285538173d4a7f90db113`, assinado (Authenticode, 11 KB). Máquina: Windows 11, 7,7 GB de RAM, 8 núcleos lógicos.
+
+**Evidências REA** (skill `reverse-engineer-anything`, CLI `rea` 6.4.0; o servidor MCP da REA não conectou nesta sessão e não há Ghidra nem Java instalados, então **também não há pseudocódigo do build Windows**):
+| Operação | Evidence ID | Resultado |
+|---|---|---|
+| `inspect_artifact` | `ev_0229e275782c990f163fe18981ea8d548ec2cd7104ee07524c54d683864cac2b` (inventário `ev_9f0beabbcca8ed41e56f306a763c1c325e4c487e1900fcbcd1bdf7c5a3046dd7`) | PE único, sem contêiner filho |
+| `inspect_managed_artifact` | `ev_cbe2918688f3e4c3637505eebdc6cc731302c50fd85ef0e6642898054e850604` | `not-managed`: sem diretório CLI; código nativo |
+| `inspect_pe_resources` | `ev_3c55cf459c91da524bd496a0b4f4fac44afbbd21e833d0ef2c39b3560b3c9956` | 241 recursos, cobertura completa |
+
+**Observado (estático):**
+| Item | Valor |
+|---|---|
+| Tamanho | 24,98 MB no total: `.text` 15,3 MB, `.data` 1,5 MB, `.rsrc` 3,4 MB, `.pdata` 0,7 MB, `.reloc` 0,6 MB, **overlay de 3,4 MB** antes da assinatura |
+| Overlay | marcador do dxgettext + **34 catálogos gettext `.mo` embutidos** (todas as traduções vão dentro do executável) |
+| Formulários | 46 formulários VCL serializados (`RT_RCDATA`, assinatura `TPF0`). O `TMAINFORM` sozinho tem **677 KB**: 313 `TMenuItem`, 160 `TAction`, 44 `TToolButton`, 10 `TVirtualStringTree`, 4 `TSynMemo`, 2 `TImageCollection` (ícones embutidos no formulário) |
+| Outros recursos | 10 temas VCL (`VCLSTYLE`, ~1 MB: Windows10, Windows10Dark, Glow, Material…), a fonte FontAwesome (162 KB), um `UPDATER.exe` embutido (363 KB), o relatório de crash madExcept (`MAD`, 515 KB) |
+| Manifesto | DPI `PerMonitorV2`, `asInvoker`, Common Controls 6, e `DWrite.dll` fixado em `%SystemRoot%\system32` contra DLL hijacking |
+| Imports estáticos | só DLLs do Windows (user32, gdi32, kernel32, comctl32, wininet, wsock32…); `gdiplus`, `uxtheme`, `DWMAPI` e `Shcore` são *delay-loaded*. **Nenhuma lib de banco é importada** |
+| Drivers de banco | carregados com `LoadLibrary`. As DLLs são descobertas varrendo a pasta do app com regex (`^libpq.*\.dll$`, `^(gds32\|ibclient\|fbclient).*\.dll$`, prefixos `libmariadb`/`libmysql`); por isso o instalador traz várias versões lado a lado (`libmysql-6.1/8.4.0/9.4.0.dll`, `libpq-15/17.dll`, `sqlite3.dll` e `sqlite3mc.dll`, `fbclient-4.0.dll`, `ibclient64-14.1.dll`) |
+| SSH | `plink.exe` (duas versões incluídas) ou OpenSSH. A senha vai na linha de comando (`-pw "…"`); para o `ssh`, `-o StrictHostKeyChecking=no` |
+| Serviços remotos | `heidisql.com/updatecheck.php`, `heidisql.com/savestats.php` (no máximo uma vez por mês, opt-in), `sqlformat.org/api/v1/format`, URLs de busca na web |
+
+**Observado (execução, gerenciador de sessões aberto, sem conexão, 3 execuções, valores estáveis a partir de ~1,4 s):**
+| Métrica | Valor (mediana) |
+|---|---|
+| Working set | **~47,6 MB** (47.488–47.628 kB) |
+| Private bytes (commit privado) | **~24,6 MB** (24.560–24.676 kB) |
+| Pico de working set | ~49,9 MB |
+| Threads / handles | 10 / ~316 |
+| Módulos carregados | **62**; só o `heidisql.exe` vem da pasta do app. **Nenhuma DLL de banco**, OpenSSL ou iconv carregada |
+| Janela | a janela principal `TMainForm` já existe (escondida) enquanto o gerenciador de sessões `Tconnform` está visível; o formulário de autocomplete também é criado na inicialização |
+| Tempo até a janela do processo existir | ~0,9 s (798–1.086 ms; medição grossa, amostragem de 250 ms, inclui criar o processo; cache do SO já aquecido) |
+
+Working set (Windows) e RSS (Linux) são comparáveis; *private bytes* (Windows) e memória anônima privada (Linux) são aproximações, não a mesma métrica. Medido com um script PowerShell (observação do shell, não evidência REA: a captura de processo da REA 6.4.0 não roda em hosts Windows).
+
+**Consequência para o Mydbsql:** no Windows, o HeidiSQL **já fica dentro** do nosso orçamento (§2.1: ≤ 60 MB de RSS, ≤ 25 MB de memória privada). As metas atuais só superam com folga o port Linux. Rever as metas por plataforma está em aberto (§2.1).
+
+**Efeito colateral:** as três execuções usaram as configurações já existentes do usuário em `HKCU\Software\HeidiSQL` (o HeidiSQL pode gravar nelas ao fechar). A verificação de atualização já tinha rodado no mesmo dia.
 
 ---
 
@@ -162,14 +208,16 @@ Estes requisitos **valem tanto quanto as funcionalidades**. Uma funcionalidade q
 
 Condições de medição: build *release*, SSD, sem conexão aberta, salvo indicação. As metas valem **nas três plataformas**; a referência do HeidiSQL foi medida no Linux x86-64. As leituras de memória usam `IPlatform::processMemory()` (§2.6): `/proc/self/status` e `smaps_rollup` no Linux, `GetProcessMemoryInfo` no Windows e `task_info` no macOS.
 
-| Métrica | HeidiSQL 12.21 (§1.5) | **Meta Mydbsql** | Como medir |
-|---|---|---|---|
-| Memória (RSS) ociosa com o gerenciador de sessões aberto | ~296 MB | **≤ 60 MB** | `--measure-startup` lê `/proc/self/status` |
-| Memória anônima privada ociosa | ~226 MB | **≤ 25 MB** | `/proc/self/smaps_rollup` |
-| Tempo até a primeira janela utilizável (*cold start*) | não medido | **≤ 300 ms** | `--measure-startup`: de `main()` ao primeiro *expose* da janela |
-| Tempo até a janela principal após conectar (servidor local) | não medido | **≤ 200 ms** além da latência do servidor | log de tempo do `SessionService` |
-| Bibliotecas carregadas na inicialização | 113 | **só Qt Core/Gui/Widgets + libc/libstdc++ + plugins Qt da plataforma**; nenhum driver de banco | `/proc/<pid>/maps` |
-| Executável principal (stripped, sem as libs do Qt) | 13,1 MB | **≤ 6 MB** | `size` em CI |
+| Métrica | HeidiSQL 12.21 Linux/Qt6 (§1.5) | HeidiSQL 12.21 Windows/VCL (§1.5) | **Meta Mydbsql** | Como medir |
+|---|---|---|---|---|
+| Memória (RSS / working set) ociosa com o gerenciador de sessões aberto | ~296 MB | ~47,6 MB | **≤ 60 MB** ⚠️ | `--measure-startup` lê `/proc/self/status` |
+| Memória anônima privada (Windows: *private bytes*) ociosa | ~226 MB | ~24,6 MB | **≤ 25 MB** ⚠️ | `/proc/self/smaps_rollup` |
+| Tempo até a primeira janela utilizável (*cold start*) | não medido | ~0,9 s (janela do processo existe; medição grossa) | **≤ 300 ms** | `--measure-startup`: de `main()` ao primeiro *expose* da janela |
+| Tempo até a janela principal após conectar (servidor local) | não medido | não medido | **≤ 200 ms** além da latência do servidor | log de tempo do `SessionService` |
+| Bibliotecas carregadas na inicialização | 113 | 62 (nenhuma de banco) | **só Qt Core/Gui/Widgets + libc/libstdc++ + plugins Qt da plataforma**; nenhum driver de banco | `/proc/<pid>/maps` |
+| Executável principal (stripped, sem as libs do Qt) | 13,1 MB | 25 MB (com traduções, temas e ícones embutidos) | **≤ 6 MB** | `size` em CI |
+
+> ⚠️ **Em aberto:** as metas de memória superam com folga o port Linux, mas **não** o build Windows, que já fica dentro delas. Decidir com o usuário se as metas passam a ser por plataforma (por exemplo, no Windows ≤ 40 MB de working set e ≤ 20 MB de *private bytes*) depois de medir o custo de uma janela Qt 6 Widgets vazia na Fase 0.
 | Trabalho bloqueante na thread da UI | — | **nenhuma tarefa > 16 ms**; zero I/O de rede ou disco | watchdog de debug (§2.3) |
 | Rolagem da grade com 1 milhão de linhas carregadas | — | 60 fps, memória ≤ 1,5× o tamanho bruto dos dados | benchmark de UI |
 | Árvore com 10 mil tabelas | — | carregar ≤ 500 ms; filtrar ≤ 50 ms | benchmark de integração |
