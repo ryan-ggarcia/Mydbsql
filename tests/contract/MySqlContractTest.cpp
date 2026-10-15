@@ -381,7 +381,7 @@ TEST_P(MySqlContractTest, IgnoredDatabasesAreHidden) {
 }
 
 INSTANTIATE_TEST_SUITE_P(Servers, MySqlContractTest, ::testing::Values("MYDB_TEST_MYSQL", "MYDB_TEST_MARIADB"),
-                         [](const auto& info) { return std::string(info.param).substr(10); });
+                         [](const auto& testParam) { return std::string(testParam.param).substr(10); });
 
 } // namespace
 } // namespace mydb::contract
