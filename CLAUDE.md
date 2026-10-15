@@ -402,7 +402,7 @@ Outros sistemas (FreeBSD, por exemplo) são "melhor esforço": devem compilar se
 2. **Caminhos:** sempre `std::filesystem::path`. Nunca concatene caminhos com `/` ou `\\` em string. No Windows, converta para UTF-16 só na fronteira com a API (`path::native()`).
 3. **Texto:** UTF-8 em todo o core. Arquivos lidos ou gravados pelo app (SQL, CSV, exportações) têm encoding e fim de linha (LF/CRLF) configuráveis, com detecção de BOM na importação.
 4. **Nomes de bibliotecas e plugins:** sufixo resolvido pelo `IPlatform` (`.so`, `.dll`, `.dylib`). Os drivers procuram a lib do cliente primeiro no diretório da aplicação e depois nos caminhos do sistema.
-5. **Credenciais:** QtKeychain (libsecret/KWallet no Linux, Credential Manager no Windows, Keychain no macOS). Se o serviço não existir (ex.: Linux sem *secret service*), o app avisa e pergunta a senha a cada conexão; **nunca** grava em texto puro.
+5. **Credenciais:** APIs nativas atrás do `ICredentialStore` (ADR-0009): libsecret no Linux, Credential Manager no Windows e Keychain no macOS. Se o serviço não existir (ex.: Linux sem *secret service*), o app avisa e pergunta a senha a cada conexão; **nunca** grava em texto puro.
 6. **SSH:** libssh2 embutido. Nenhuma dependência de `ssh`, `plink` ou `sshpass` externos, que o HeidiSQL usa (§1.5) e se comportam diferente em cada SO.
 7. **UI nativa e HiDPI:** só widgets Qt padrão + estilo nativo de cada SO (Fusion como alternativa). Ícones SVG, escala fracionária (1,25×, 1,5×, 2×), modo escuro seguindo o sistema. Atalhos via `QKeySequence::StandardKey`, para que `Ctrl` vire `Cmd` no macOS. Menus seguem a convenção de cada SO (menu "Preferências" no app menu do macOS).
 8. **Sistema de arquivos:** não presuma diferença ou igualdade entre maiúsculas e minúsculas em nomes de arquivo. Use `QSaveFile` ou a escrita atômica do `IPlatform` (no Windows, `MoveFileExW` com `REPLACE_EXISTING`).
@@ -434,7 +434,7 @@ Outros sistemas (FreeBSD, por exemplo) são "melhor esforço": devem compilar se
 | SQLite | sqlite3 (SQLCipher opcional) | — |
 | MSSQL / Firebird | FreeTDS (db-lib) / fbclient | Fase posterior |
 | SSH | libssh2 (túnel embutido) | Elimina a dependência de plink/ssh externos |
-| Segredos | QtKeychain | libsecret, macOS Keychain e Windows Credential Manager |
+| Segredos | APIs nativas em `infra/platform` (ADR-0009): Windows Credential Manager, Keychain do macOS e libsecret (carregada sob demanda) | Sem Qt nem dependência nova; o QtKeychain do vcpkg exigiria compilar o Qt |
 | Configuração | JSON (`nlohmann/json`) no diretório de config de cada SO (resolvido pelo `IPlatform`, §2.6) | Legível, versionável, portátil |
 | Log | spdlog (modo assíncrono, nível `info` em release) | Rápido; não bloqueia a UI |
 | Plugins dinâmicos | `DynamicLibrary` RAII próprio (dlopen/LoadLibrary) ou `QPluginLoader` só em `app/` | Drivers e módulos opcionais carregados sob demanda (§2.2) |
@@ -673,9 +673,9 @@ A partir da Fase 1, toda funcionalidade entra como **módulo** (§2.4). Se uma t
 - **Pronto quando:** conecta, lista bancos e objetos, executa query e lê resultados nos testes de integração, com o driver carregado sob demanda. *(Local: 22 testes de contrato verdes contra MySQL 8.0.45 e MariaDB 11.4.12; na CI, job `integration` com MySQL 8.4 e MariaDB 11.4 em docker-compose.)*
 
 ### Fase 3 — Sessões, configurações e credenciais
-- [ ] `ISettingsStore` (JSON) com migração por versão de esquema.
-- [ ] `SessionRepository`: CRUD de sessões em árvore com pastas, cor, comentário, estatísticas; exportar e importar.
-- [ ] `ICredentialStore` (QtKeychain) + fallback em memória para testes.
+- [x] `ISettingsStore` (JSON) com migração por versão de esquema.
+- [x] `SessionRepository`: CRUD de sessões em árvore com pastas, cor, comentário, estatísticas; exportar e importar.
+- [x] `ICredentialStore` (APIs nativas, ADR-0009) + fallback em memória para testes e para SOs sem cofre.
 - [ ] UI: **Gerenciador de sessões** (árvore + abas Configurações, SSH, SSL, Avançado), testar conexão.
 - **Pronto quando:** dá para criar uma sessão MySQL, salvar, reabrir o app e conectar sem digitar a senha de novo.
 

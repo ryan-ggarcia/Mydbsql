@@ -1,7 +1,7 @@
 #include "app/ModuleHost.hpp"
 
+#include "infra/credentials/MemoryCredentialStore.hpp"
 #include "infra/platform/IPlatform.hpp"
-#include "support/MemoryCredentialStore.hpp"
 
 #include <gtest/gtest.h>
 
@@ -161,7 +161,7 @@ TEST(ModuleHostTest, MySqlDriverIsLoadedOnlyWhenRequested) {
     EXPECT_TRUE(isLoaded(*platform, driverFile));
     EXPECT_EQ(host.driver("mysql", directory), entry); // já registrado: não carrega de novo
 
-    tests::MemoryCredentialStore credentials;
+    infra::credentials::MemoryCredentialStore credentials;
     core::ConnectionParams params;
     params.driverId = "mysql";
     const auto driver = host.drivers().create("mysql");

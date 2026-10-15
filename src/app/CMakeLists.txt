@@ -1,5 +1,6 @@
 add_library(mydb_app_support STATIC
     CommandLine.cpp
+    ModuleDriverCatalog.cpp
     ModuleHost.cpp
     StartupReport.cpp
 )

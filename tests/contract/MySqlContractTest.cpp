@@ -7,7 +7,7 @@
 #include "core/errors/DbError.hpp"
 #include "core/interfaces/IConnection.hpp"
 #include "drivers/mysql/MySqlDriver.hpp"
-#include "support/MemoryCredentialStore.hpp"
+#include "infra/credentials/MemoryCredentialStore.hpp"
 
 #include <gtest/gtest.h>
 
@@ -126,7 +126,7 @@ protected:
     [[nodiscard]] bool mariaDb() const { return m_connection->serverInfo().productName == "MariaDB"; }
 
     core::ConnectionParams m_params;
-    tests::MemoryCredentialStore m_credentials;
+    infra::credentials::MemoryCredentialStore m_credentials;
     std::unique_ptr<core::IConnection> m_connection;
 };
 

@@ -21,6 +21,10 @@ add_executable(mydb_tests
     unit/core/SqlTokenizerTest.cpp
     unit/sdk/SdkTest.cpp
     unit/drivers/MySqlTextTest.cpp
+    unit/infra/JsonSettingsStoreTest.cpp
+    unit/infra/SystemCredentialStoreTest.cpp
+    unit/services/SessionRepositoryTest.cpp
+    unit/services/SessionConnectorTest.cpp
     unit/infra/DynamicLibraryTest.cpp
     unit/infra/PlatformTest.cpp
     unit/infra/UrlPolicyTest.cpp
@@ -34,6 +38,8 @@ target_link_libraries(mydb_tests PRIVATE
     mydb::platform
     mydb::app_support
     mydb_driver_mysql_text
+    mydb::settings
+    mydb::services_session
     GTest::gtest_main)
 target_include_directories(mydb_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_definitions(mydb_tests PRIVATE

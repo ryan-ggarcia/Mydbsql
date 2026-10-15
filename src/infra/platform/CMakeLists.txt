@@ -4,17 +4,21 @@ add_library(mydb::platform ALIAS mydb_platform)
 if(WIN32)
     target_sources(mydb_platform PRIVATE
         WindowsPlatform.cpp
+        WindowsCredentialStore.cpp
         DynamicLibraryWindows.cpp)
     target_compile_definitions(mydb_platform PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
-    target_link_libraries(mydb_platform PRIVATE psapi shell32 ole32)
+    target_link_libraries(mydb_platform PRIVATE psapi shell32 ole32 advapi32)
 elseif(APPLE)
     target_sources(mydb_platform PRIVATE
         MacPlatform.cpp
+        MacCredentialStore.cpp
         PosixSupport.cpp
         DynamicLibraryPosix.cpp)
+    target_link_libraries(mydb_platform PRIVATE "-framework Security" "-framework CoreFoundation")
 else()
     target_sources(mydb_platform PRIVATE
         LinuxPlatform.cpp
+        LinuxCredentialStore.cpp
         PosixSupport.cpp
         DynamicLibraryPosix.cpp)
 endif()
