@@ -342,7 +342,8 @@ public:
     virtual ExporterRegistry& exporters() = 0;
     virtual ToolRegistry&     tools()     = 0;
     virtual CommandRegistry&  commands()  = 0;
-    // …
+    virtual EventBus&         events()    = 0;
+    // … hoje existem drivers() e events(); os demais entram com as fases que os usam (major da API sobe)
 protected:
     ~ModuleContext() = default;
 };
@@ -357,8 +358,8 @@ public:
 
 } // namespace mydb::sdk
 
-// Plugin dinâmico (drivers e módulos opcionais): um único símbolo exportado
-extern "C" MYDB_EXPORT mydb::sdk::IModule* mydb_module_entry();
+// Plugin dinâmico (drivers e módulos opcionais): um único símbolo exportado, gerado pela macro
+MYDB_DYNAMIC_MODULE(MeuModulo)   // extern "C" mydb::sdk::IModule* mydb_module_entry()
 ```
 
 **Regras de módulo:**
@@ -381,7 +382,7 @@ extern "C" MYDB_EXPORT mydb::sdk::IModule* mydb_module_entry();
 - `mydbsql --measure-startup` imprime JSON com `startup_ms`, `rss_kb`, `anon_kb` e `libs_loaded` e encerra. É rodado em CI a cada PR (3 execuções, mediana).
 - Benchmarks (`bench/`) rodam em CI e comparam com `bench/baseline.json`; uma regressão maior que 10% falha.
 - Teste automático que confirma que **nenhum driver é carregado** antes da primeira conexão, em cada SO (`IPlatform::loadedLibraries()`: `/proc/self/maps` no Linux, `EnumProcessModules` no Windows, `_dyld_image_name` no macOS).
-- Teste que confirma que nenhum módulo inclui headers de outro módulo (checagem de dependências no CMake: cada módulo só linka `mydb_core` e `mydb_sdk`).
+- Teste que confirma que nenhum módulo inclui headers de outro módulo (checagem de dependências no CMake: cada módulo só linka `mydb_core` e `mydb_sdk`; `tools/check_module_deps.py` confere os `#include`).
 - Em todo PR que adiciona dependência ou funcionalidade grande: anexar o antes e depois de `--measure-startup`.
 
 ### 2.6 Compatibilidade multiplataforma
@@ -480,12 +481,10 @@ Regra de dependência: **as setas só apontam para baixo, até o `core`**. O `co
 ```cpp
 namespace mydb::core {
 
-enum class DriverKind { MySql, MariaDb, PostgreSql, Sqlite, MsSql, Firebird };
-
 struct ConnectionParams {               // valor imutável; sem senha (fica em ICredentialStore)
     std::string sessionId, host, user, defaultDatabase;
     uint16_t port{};
-    DriverKind driver{};
+    std::string driverId;             // id do IDriver no DriverRegistry: "mysql", "postgresql"… (ADR-0007)
     std::optional<SslOptions> ssl;
     std::optional<SshTunnelOptions> ssh;
     std::chrono::seconds queryTimeout{0}, keepAlive{0};
@@ -522,6 +521,7 @@ public:
     virtual ServerInfo serverInfo() const = 0;
     virtual const ISqlDialect& dialect() const = 0;
     virtual IMetadataProvider& metadata() = 0;
+    virtual Capabilities capabilities() = 0;                // interfaces opcionais (ponteiros nulos = ausente)
 };
 
 class ISqlDialect {                     // regras textuais do SGBD (sem I/O)
@@ -533,6 +533,7 @@ public:
     virtual std::string applyLimit(std::string_view select, int64_t limit, int64_t offset) const = 0;
     virtual std::span<const DataType> dataTypes() const = 0;
     virtual bool supports(Feature) const = 0;               // equivale ao TFeatureOrRequirement
+    virtual sql::SqlSyntax syntax() const = 0;              // regras léxicas para o SqlSplitter e o realce
 };
 
 class IMetadataProvider {               // introspecção (information_schema, pg_catalog, sqlite_master…)
@@ -554,7 +555,7 @@ class IBulkLoader        { /* LOAD DATA / COPY FROM / insert em lote */ };
 class IDriver {                         // fábrica por SGBD, registrada no DriverRegistry (OCP)
 public:
     virtual ~IDriver() = default;
-    virtual DriverKind kind() const = 0;
+    virtual std::string_view id() const noexcept = 0;      // texto, não enum: SGBD novo sem editar código central
     virtual std::string displayName() const = 0;
     virtual std::unique_ptr<IConnection> createConnection(const ConnectionParams&, ICredentialStore&) const = 0;
 };
@@ -621,7 +622,7 @@ Mydbsql/
 │   │   ├── editors/               # SqlEditor, TableDesigner, RoutineEditor, …
 │   │   ├── dialogs/               # SessionManager, Preferences, Export, Import, …
 │   │   └── delegates/             # editores in-place (Hex, DateTime, Enum, Set)
-│   └── app/                       # main.cpp, CompositionRoot, BuiltinModules, ModuleLoader
+│   └── app/                       # main.cpp, CompositionRoot, BuiltinModules, ModuleHost
 ├── resources/                     # ícones SVG próprios/livres, .qrc, traduções, snippets
 ├── bench/                         # Google Benchmark + baseline.json (§2.5)
 ├── tests/
@@ -651,13 +652,13 @@ A partir da Fase 1, toda funcionalidade entra como **módulo** (§2.4). Se uma t
 - **Pronto quando:** `cmake --preset debug && cmake --build --preset debug && ctest --preset debug` passa, a janela vazia abre e `--measure-startup` mostra ≤ 150 ms e ≤ 40 MB de RSS **nas três plataformas**. *(Concluída em 2026-10-14. Linux e Windows cumprem as metas; o macOS tem metas próprias por decisão do usuário, §2.1.)*
 
 ### Fase 1 — Núcleo de domínio e SQL (`core/`)
-- [ ] Modelos: `DbObject` (tipo, nome, banco, linhas, tamanho, datas), `Column`, `DataType` (+ categorias inteiro, real, texto, binário, temporal, espacial, outros), `Index`, `ForeignKey`, `CheckConstraint`, `TableDefinition`, `RoutineParam`.
-- [ ] Interfaces da §4.2.
-- [ ] `SqlTokenizer` + `SqlSplitter`: respeita strings, identificadores entre aspas, comentários `--`, `#`, `/* */`, `DELIMITER`, `$$`/`$tag$` do PostgreSQL e blocos `BEGIN…END`. Dá a posição de cada sentença (para "executar query atual").
-- [ ] Testes unitários extensos do splitter (é a peça mais propensa a bugs). Benchmark: dividir 100 MB de SQL em streaming com memória constante.
-- [ ] `sdk/`: `IModule`, `ModuleContext`, registries (§2.4); `ModuleLoader` (estático + dinâmico, checagem de `apiVersion`); `EventBus`.
-- [ ] Checagem de dependências no CMake: módulos só linkam `mydb_core` + `mydb_sdk`.
-- **Pronto quando:** cobertura ≥ 90% em `core/sql` e um módulo de exemplo (`modules/example_hello`) é carregado dinamicamente sem mudanças fora da pasta dele.
+- [x] Modelos: `DbObject` (tipo, nome, banco, linhas, tamanho, datas), `Column`, `DataType` (+ categorias inteiro, real, texto, binário, temporal, espacial, outros), `Index`, `ForeignKey`, `CheckConstraint`, `TableDefinition`, `RoutineParam`.
+- [x] Interfaces da §4.2.
+- [x] `SqlTokenizer` + `SqlSplitter`: respeita strings, identificadores entre aspas, comentários `--`, `#`, `/* */`, `DELIMITER`, `$$`/`$tag$` do PostgreSQL e blocos `BEGIN…END`. Dá a posição de cada sentença (para "executar query atual").
+- [x] Testes unitários extensos do splitter (é a peça mais propensa a bugs). Benchmark: dividir 100 MB de SQL em streaming com memória constante. *(~105 MB/s em release no Windows; no máximo 1 byte retido entre blocos.)*
+- [x] `sdk/`: `IModule`, `ModuleContext`, registries (§2.4); `ModuleLoader` (estático + dinâmico, checagem de `apiVersion`); `EventBus`. *(O carregador se chama `app::ModuleHost`.)*
+- [x] Checagem de dependências no CMake: módulos só linkam `mydb_core` + `mydb_sdk`.
+- **Pronto quando:** cobertura ≥ 90% em `core/sql` e um módulo de exemplo (`modules/example_hello`) é carregado dinamicamente sem mudanças fora da pasta dele. *(Módulo de exemplo: feito e testado. Cobertura: medida pelo job `coverage` da CI, que falha abaixo de 90%.)*
 
 ### Fase 2 — Primeiro driver: MySQL/MariaDB
 - [ ] Wrapper RAII para `MYSQL*` e `MYSQL_RES*`.

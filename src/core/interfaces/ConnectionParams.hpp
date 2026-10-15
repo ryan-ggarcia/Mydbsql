@@ -30,7 +30,7 @@ struct SshTunnelOptions {
     std::string host;
     std::uint16_t port{22};
     std::string user;
-    std::filesystem::path privateKey; ///< vazio: autenticação por senha (a senha fica no ICredentialStore)
+    std::filesystem::path privateKey;       ///< vazio: autenticação por senha (a senha fica no ICredentialStore)
     std::optional<std::uint16_t> localPort; ///< vazio: porta livre escolhida automaticamente
     std::chrono::seconds timeout{10};
 

@@ -38,9 +38,9 @@ TEST(SqlTokenizerTest, TokensCoverTheWholeInputWithoutGaps) {
 TEST(SqlTokenizerTest, ClassifiesMySqlTokens) {
     const auto tokens = significant("SELECT `a`, \"b\", 'c' -- x\n/* y */ 1.5e+3 # z", SqlSyntax::mysql());
     const std::vector<std::pair<Kind, std::string>> expected{
-        {Kind::Word, "SELECT"},          {Kind::QuotedIdentifier, "`a`"}, {Kind::Operator, ","},
-        {Kind::String, "\"b\""},         {Kind::Operator, ","},           {Kind::String, "'c'"},
-        {Kind::LineComment, "-- x"},     {Kind::BlockComment, "/* y */"}, {Kind::Number, "1.5e+3"},
+        {Kind::Word, "SELECT"},      {Kind::QuotedIdentifier, "`a`"}, {Kind::Operator, ","},
+        {Kind::String, "\"b\""},     {Kind::Operator, ","},           {Kind::String, "'c'"},
+        {Kind::LineComment, "-- x"}, {Kind::BlockComment, "/* y */"}, {Kind::Number, "1.5e+3"},
         {Kind::LineComment, "# z"},
     };
     EXPECT_EQ(tokens, expected);
@@ -49,10 +49,12 @@ TEST(SqlTokenizerTest, ClassifiesMySqlTokens) {
 TEST(SqlTokenizerTest, ClassifiesPostgresTokens) {
     const auto tokens = significant("SELECT \"a\", $$b$$, $q$c$q$, E'd\\'', $1, .5", SqlSyntax::postgresql());
     const std::vector<std::pair<Kind, std::string>> expected{
-        {Kind::Word, "SELECT"},   {Kind::QuotedIdentifier, "\"a\""}, {Kind::Operator, ","},
-        {Kind::String, "$$b$$"},  {Kind::Operator, ","},             {Kind::String, "$q$c$q$"},
-        {Kind::Operator, ","},    {Kind::String, "E'd\\''"},          {Kind::Operator, ","},
-        {Kind::Operator, "$"},    {Kind::Number, "1"},                {Kind::Operator, ","},
+        {Kind::Word, "SELECT"}, {Kind::QuotedIdentifier, "\"a\""},
+        {Kind::Operator, ","},  {Kind::String, "$$b$$"},
+        {Kind::Operator, ","},  {Kind::String, "$q$c$q$"},
+        {Kind::Operator, ","},  {Kind::String, "E'd\\''"},
+        {Kind::Operator, ","},  {Kind::Operator, "$"},
+        {Kind::Number, "1"},    {Kind::Operator, ","},
         {Kind::Number, ".5"},
     };
     EXPECT_EQ(tokens, expected);
@@ -101,6 +103,42 @@ TEST(SqlTokenizerTest, UnterminatedTokensAtFinalInputAreIncomplete) {
     ASSERT_EQ(mysql.next("-- fim", 0, true, token), Status::Token);
     EXPECT_EQ(token.kind, Kind::LineComment);
     EXPECT_TRUE(token.complete);
+}
+
+TEST(SqlTokenizerTest, EdgeCasesAtFinalInput) {
+    const SqlTokenizer mysql(SqlSyntax::mysql());
+    const SqlTokenizer pg(SqlSyntax::postgresql());
+    const auto kindOf = [](const SqlTokenizer& tokenizer, std::string_view text) {
+        SqlToken token;
+        EXPECT_EQ(tokenizer.next(text, 0, true, token), Status::Token) << text;
+        return std::pair{token.kind, token.length};
+    };
+    EXPECT_EQ(kindOf(mysql, "-"), (std::pair{Kind::Operator, std::size_t{1}}));
+    EXPECT_EQ(kindOf(mysql, "/"), (std::pair{Kind::Operator, std::size_t{1}}));
+    EXPECT_EQ(kindOf(mysql, "."), (std::pair{Kind::Operator, std::size_t{1}}));
+    EXPECT_EQ(kindOf(mysql, "--"), (std::pair{Kind::LineComment, std::size_t{2}}));
+    EXPECT_EQ(kindOf(mysql, "0x1F+"), (std::pair{Kind::Number, std::size_t{4}}));
+    EXPECT_EQ(kindOf(mysql, "1e-5,"), (std::pair{Kind::Number, std::size_t{4}}));
+    EXPECT_EQ(kindOf(mysql, "'a\\"), (std::pair{Kind::String, std::size_t{3}}));
+    EXPECT_EQ(kindOf(mysql, "$x"), (std::pair{Kind::Word, std::size_t{2}}));
+    EXPECT_EQ(kindOf(pg, "$"), (std::pair{Kind::Operator, std::size_t{1}}));
+    EXPECT_EQ(kindOf(pg, "$abc"), (std::pair{Kind::Operator, std::size_t{1}}));
+    EXPECT_EQ(kindOf(pg, "$abc x"), (std::pair{Kind::Operator, std::size_t{1}}));
+    EXPECT_EQ(kindOf(pg, "$a$ x $a"), (std::pair{Kind::String, std::size_t{8}}));
+    EXPECT_EQ(kindOf(pg, "E"), (std::pair{Kind::Word, std::size_t{1}}));
+    EXPECT_EQ(kindOf(pg, "Ex"), (std::pair{Kind::Word, std::size_t{2}}));
+    EXPECT_EQ(kindOf(pg, "/* a /"), (std::pair{Kind::BlockComment, std::size_t{6}}));
+}
+
+TEST(SqlTokenizerTest, NeedMoreInsideEscapesAndNestedComments) {
+    const SqlTokenizer mysql(SqlSyntax::mysql());
+    const SqlTokenizer pg(SqlSyntax::postgresql());
+    SqlToken token;
+    EXPECT_EQ(mysql.next("'a\\", 0, false, token), Status::NeedMore);
+    EXPECT_EQ(pg.next("/* a /", 0, false, token), Status::NeedMore);
+    EXPECT_EQ(pg.next("$", 0, false, token), Status::NeedMore);
+    EXPECT_EQ(mysql.next(".", 0, false, token), Status::NeedMore);
+    EXPECT_EQ(mysql.next("/", 0, false, token), Status::NeedMore);
 }
 
 TEST(SqlTokenizerTest, NestedBlockCommentsOnlyWhenEnabled) {

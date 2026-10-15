@@ -1,7 +1,7 @@
 #pragma once
 
-#include "core/model/Column.hpp"
 #include "core/model/CheckConstraint.hpp"
+#include "core/model/Column.hpp"
 #include "core/model/ForeignKey.hpp"
 #include "core/model/Index.hpp"
 #include "core/model/ObjectRef.hpp"

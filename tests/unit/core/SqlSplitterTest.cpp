@@ -27,7 +27,9 @@ std::vector<std::string> splitTexts(std::string_view sql, const SqlSyntax& synta
 std::vector<SqlStatement> splitInChunks(std::string_view sql, const SqlSyntax& syntax, std::size_t chunkSize) {
     std::vector<SqlStatement> statements;
     SqlSplitter splitter(syntax);
-    const SqlSplitter::Sink sink = [&statements](SqlStatement&& s) { statements.push_back(std::move(s)); };
+    const SqlSplitter::Sink sink = [&statements](SqlStatement&& s) {
+        statements.push_back(std::move(s));
+    };
     for (std::size_t offset = 0; offset < sql.size(); offset += chunkSize) {
         splitter.feed(sql.substr(offset, chunkSize), sink);
     }
@@ -125,7 +127,9 @@ TEST(SqlSplitterTest, DelimiterIsCaseInsensitiveAndOnlyAtStatementStart) {
 TEST(SqlSplitterTest, DelimiterCommandAtEndOfInputWithoutNewline) {
     SqlSplitter splitter(SqlSyntax::mysql());
     std::vector<SqlStatement> statements;
-    const SqlSplitter::Sink sink = [&statements](SqlStatement&& s) { statements.push_back(std::move(s)); };
+    const SqlSplitter::Sink sink = [&statements](SqlStatement&& s) {
+        statements.push_back(std::move(s));
+    };
     splitter.feed("SELECT 1;\nDELIMITER //", sink);
     EXPECT_EQ(splitter.delimiter(), ";"); // ainda pode vir mais texto na linha
     splitter.finish(sink);
@@ -169,10 +173,10 @@ TEST(SqlSplitterTest, RoutineVariants) {
 }
 
 TEST(SqlSplitterTest, TriggerWithCaseExpressionAndNoBegin) {
-    EXPECT_EQ(splitTexts("CREATE TRIGGER t BEFORE INSERT ON x FOR EACH ROW SET NEW.a = CASE WHEN 1 THEN 2 END; "
-                         "SELECT 3"),
-              (Texts{"CREATE TRIGGER t BEFORE INSERT ON x FOR EACH ROW SET NEW.a = CASE WHEN 1 THEN 2 END",
-                     "SELECT 3"}));
+    EXPECT_EQ(
+        splitTexts("CREATE TRIGGER t BEFORE INSERT ON x FOR EACH ROW SET NEW.a = CASE WHEN 1 THEN 2 END; "
+                   "SELECT 3"),
+        (Texts{"CREATE TRIGGER t BEFORE INSERT ON x FOR EACH ROW SET NEW.a = CASE WHEN 1 THEN 2 END", "SELECT 3"}));
 }
 
 TEST(SqlSplitterTest, TransactionBeginIsNotABlock) {
@@ -210,9 +214,9 @@ TEST(SqlSplitterTest, CompoundBlocksCanBeDisabled) {
 
 TEST(SqlSplitterTest, PostgresDollarQuotes) {
     const SqlSyntax pg = SqlSyntax::postgresql();
-    EXPECT_EQ(splitTexts("CREATE FUNCTION f() RETURNS int AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql; SELECT 1;",
-                         pg),
-              (Texts{"CREATE FUNCTION f() RETURNS int AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql", "SELECT 1"}));
+    EXPECT_EQ(
+        splitTexts("CREATE FUNCTION f() RETURNS int AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql; SELECT 1;", pg),
+        (Texts{"CREATE FUNCTION f() RETURNS int AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql", "SELECT 1"}));
     EXPECT_EQ(splitTexts("DO $body$ BEGIN PERFORM 1; $x$; END $body$; SELECT 2", pg),
               (Texts{"DO $body$ BEGIN PERFORM 1; $x$; END $body$", "SELECT 2"}));
     EXPECT_EQ(splitTexts("SELECT $1, a$b FROM t; SELECT 2", pg), (Texts{"SELECT $1, a$b FROM t", "SELECT 2"}));
@@ -284,8 +288,7 @@ TEST(SqlSplitterTest, AnyChunkSizeGivesTheSameResult) {
              SqlSyntax::mysql()},
         Case{"SELECT $$a;b$$; SELECT $t$ $$; $t$; /* x /* y; */ */ SELECT E'\\';'; SELECT 'ação'",
              SqlSyntax::postgresql()},
-        Case{"SELECT [a;b]; CREATE TRIGGER t AFTER INSERT ON a BEGIN SELECT 1; END;\r\nSELECT 2",
-             SqlSyntax::sqlite()},
+        Case{"SELECT [a;b]; CREATE TRIGGER t AFTER INSERT ON a BEGIN SELECT 1; END;\r\nSELECT 2", SqlSyntax::sqlite()},
     };
     for (const Case& c : cases) {
         const auto whole = SqlSplitter::split(c.sql, c.syntax);
@@ -310,7 +313,9 @@ TEST(SqlSplitterTest, MemoryStaysConstantOnLargeInput) {
     SqlSplitter splitter(SqlSyntax::mysql());
     std::size_t count = 0;
     std::size_t maxBuffered = 0;
-    const SqlSplitter::Sink sink = [&count](SqlStatement&&) { ++count; };
+    const SqlSplitter::Sink sink = [&count](SqlStatement&&) {
+        ++count;
+    };
     std::size_t fed = 0;
     while (fed < kTotal) {
         splitter.feed(chunk, sink);
@@ -335,7 +340,9 @@ TEST(SqlSplitterTest, HugeTokenAcrossManySmallChunks) {
 TEST(SqlSplitterTest, FinishResetsForReuse) {
     SqlSplitter splitter(SqlSyntax::mysql());
     std::vector<SqlStatement> statements;
-    const SqlSplitter::Sink sink = [&statements](SqlStatement&& s) { statements.push_back(std::move(s)); };
+    const SqlSplitter::Sink sink = [&statements](SqlStatement&& s) {
+        statements.push_back(std::move(s));
+    };
     splitter.feed("DELIMITER //\nSELECT 1//\nSELECT 2", sink);
     splitter.finish(sink);
     EXPECT_EQ(splitter.delimiter(), ";");

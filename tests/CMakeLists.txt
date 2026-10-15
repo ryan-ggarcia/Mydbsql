@@ -9,22 +9,35 @@ generate_export_header(mydb_test_plugin
 target_include_directories(mydb_test_plugin PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 mydb_set_warnings(mydb_test_plugin)
 
+mydb_add_dynamic_module(
+    TARGET mydb_module_test_bad_version
+    ID test.bad_version
+    SOURCES fixtures/BadVersionModule.cpp)
+
 add_executable(mydb_tests
     unit/core/DbErrorTest.cpp
+    unit/core/ModelTest.cpp
+    unit/core/SqlSplitterTest.cpp
+    unit/core/SqlTokenizerTest.cpp
+    unit/sdk/SdkTest.cpp
     unit/infra/DynamicLibraryTest.cpp
     unit/infra/PlatformTest.cpp
     unit/infra/UrlPolicyTest.cpp
     unit/app/CommandLineTest.cpp
+    unit/app/ModuleHostTest.cpp
     unit/app/StartupReportTest.cpp
 )
 target_link_libraries(mydb_tests PRIVATE
     mydb::core
+    mydb::sdk
     mydb::platform
     mydb::app_support
     GTest::gtest_main)
 target_compile_definitions(mydb_tests PRIVATE
-    MYDB_TEST_PLUGIN_PATH="$<TARGET_FILE:mydb_test_plugin>")
-add_dependencies(mydb_tests mydb_test_plugin)
+    MYDB_TEST_PLUGIN_PATH="$<TARGET_FILE:mydb_test_plugin>"
+    MYDB_EXAMPLE_MODULE_PATH="$<TARGET_FILE:mydb_module_example_hello>"
+    MYDB_BAD_VERSION_MODULE_PATH="$<TARGET_FILE:mydb_module_test_bad_version>")
+add_dependencies(mydb_tests mydb_test_plugin mydb_module_example_hello mydb_module_test_bad_version)
 mydb_set_warnings(mydb_tests)
 
 gtest_discover_tests(mydb_tests
@@ -36,6 +49,10 @@ if(Python3_Interpreter_FOUND)
         COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tools/check_platform_ifdefs.py"
                 --root "${PROJECT_SOURCE_DIR}")
     set_tests_properties(lint.platform_ifdefs PROPERTIES LABELS lint)
+    add_test(NAME lint.module_dependencies
+        COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tools/check_module_deps.py"
+                --root "${PROJECT_SOURCE_DIR}")
+    set_tests_properties(lint.module_dependencies PROPERTIES LABELS lint)
 endif()
 
 if(MYDB_BUILD_APP)

@@ -17,7 +17,7 @@ enum class SqlTokenKind : std::uint8_t {
     QuotedIdentifier, ///< "x", `x` ou [x], conforme o dialeto
     String,           ///< 'x', E'x', $$x$$ e, no MySQL, "x"
     Number,
-    Operator,         ///< um caractere de pontuação ou operador, inclusive ";"
+    Operator, ///< um caractere de pontuação ou operador, inclusive ";"
 };
 
 struct SqlToken {

@@ -60,12 +60,12 @@ private:
 
     SqlTokenizer m_tokenizer;
     std::string m_buffer;
-    std::uint64_t m_bufferOffset{0}; ///< posição absoluta de m_buffer[0] na entrada
-    std::size_t m_scan{0};           ///< próximo byte a analisar em m_buffer
-    std::size_t m_statementStart{0}; ///< início da sentença em andamento em m_buffer
+    std::uint64_t m_bufferOffset{0};   ///< posição absoluta de m_buffer[0] na entrada
+    std::size_t m_scan{0};             ///< próximo byte a analisar em m_buffer
+    std::size_t m_statementStart{0};   ///< início da sentença em andamento em m_buffer
     std::size_t m_retryWhenPending{0}; ///< só reanalisa quando houver ao menos estes bytes pendentes
 
-    std::size_t m_trackPos{0};       ///< até onde linhas e colunas já foram contadas em m_buffer
+    std::size_t m_trackPos{0}; ///< até onde linhas e colunas já foram contadas em m_buffer
     std::uint32_t m_trackLine{1};
     std::uint32_t m_trackColumn{1};
 

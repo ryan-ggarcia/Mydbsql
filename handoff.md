@@ -2,7 +2,7 @@
 
 Contexto para qualquer agente de IA (ou pessoa) retomar o trabalho. **Leia este arquivo inteiro e depois o `CLAUDE.md`**, que é a fonte de verdade do projeto. Este arquivo descreve *o que aconteceu e o que falta*; o `CLAUDE.md` descreve *o que construir e como*.
 
-Última atualização: 2026-10-14, com a **Fase 0 concluída** (CI verde nas 3 plataformas).
+Última atualização: 2026-10-15, com a **Fase 1** implementada localmente (falta a CI confirmar a cobertura).
 
 ---
 
@@ -10,7 +10,7 @@ Contexto para qualquer agente de IA (ou pessoa) retomar o trabalho. **Leia este 
 
 - **Projeto:** Mydbsql, um cliente gráfico de bancos de dados inspirado no HeidiSQL, a ser escrito **do zero em C++20**, orientado a objetos, com **SOLID**, **leve, rápido, fácil de estender** e **compatível com Linux, Windows e macOS**.
 - **Estado do repositório:** análise e **Fase 0** commitadas e no GitHub (`main`). Fase 0: CMake, presets, vcpkg, `infra/platform`, logging, `DbError`, janela vazia com `--measure-startup`, testes, benchmarks, CI e ADRs 0001–0006 (§3, item 9).
-- **Fase atual:** **Fase 0 concluída** em 2026-10-14. CI verde nos 12 jobs (Linux x86-64 GCC e Clang, Linux ARM64, Windows MSVC, macOS, sanitizers, clang-tidy, lint e orçamento nas 3 plataformas). Próximo passo: **Fase 1** (§6, item 8). A análise do HeidiSQL e do MySQL Workbench está concluída (`CLAUDE.md` §1.5 e §1.6).
+- **Fase atual:** **Fase 1** (núcleo de domínio e SQL), implementada e verde no Windows: 90 testes, clang-tidy limpo. Falta a CI confirmar Linux/macOS e a cobertura ≥ 90% em `core/sql` (job `coverage`). Fase 0 concluída em 2026-10-14. A análise do HeidiSQL e do MySQL Workbench está concluída (`CLAUDE.md` §1.5 e §1.6).
 
 ---
 
@@ -55,6 +55,15 @@ Contexto para qualquer agente de IA (ou pessoa) retomar o trabalho. **Leia este 
    - **Toolchain encontrado:** VS 2026 Build Tools 18.10 com MSVC 14.51 (toolset v145), CMake, Ninja e vcpkg embutidos. Há também um VS Community 2026 18.4 sem MSVC útil e com data de suporte vencida. Faltavam o Qt e as ferramentas do LLVM.
    - **Instalado com autorização do usuário:** Qt 6.11.3 `qtbase` para MSVC 64 bits (binários oficiais, 275 MB, em `C:\Users\Iberika\tools\Qt`) e, via `pip install --user`, aqtinstall 3.3.0, clang-format 23.1.3 e clang-tidy 22.1.8. O aqtinstall **não funciona** com o layout novo do repositório do Qt no Windows, por isso foi escrito `tools/fetch_qt.py` (ADR-0006).
    - **Fase 0 implementada** (detalhes e pendências em §6 e no `CLAUDE.md` §5).
+
+10. **2026-10-14/15, Fase 1** ("pode continuar"). O usuário commitou o trabalho em andamento como `02b64f8`. Feito:
+   - `core/model/`: `ObjectRef`, `DbObject`, `DataType` (+ categorias), `Column` (default, coluna gerada, invisível, SRID), `Index`, `ForeignKey`, `CheckConstraint`, `TableDefinition` (`findColumn`, `primaryKey`, `rowIdentityColumns` para o Unit of Work da Fase 6) e `RoutineParam`.
+   - `core/interfaces/`: `ConnectionParams`, `IResultSet`, `ExecutionResult`, `ServerInfo`, `ISqlDialect` (+ `Feature`, `syntax()`), `IMetadataProvider`, `IConnection` (+ `capabilities()`), as interfaces opcionais (`IDdlGenerator`, `IServerAdmin`, `IUserAdmin`, `ITableMaintenance`, `IBulkLoader`), `ICredentialStore` e `IDriver`. Mudança de projeto: drivers identificados por texto, não por enum (ADR-0007).
+   - `core/sql/`: `SqlSyntax` (presets MySQL, PostgreSQL, SQLite), `SqlTokenizer` (sem estado; responde NeedMore quando o token pode continuar no próximo bloco) e `SqlSplitter` em streaming (DELIMITER, `$$`/`$tag$`, comentários aninhados, `E''`, colchetes, BEGIN…END de CREATE PROCEDURE/FUNCTION/TRIGGER/EVENT e BEGIN NOT ATOMIC, `END$$` colado, posição em bytes/linha/coluna, `statementAt` para "executar a query atual"). Um token enorme em muitos blocos só é reanalisado quando os dados pendentes dobram (evita custo quadrático).
+   - `sdk/`: `Version`/`kApiVersion` 1.0, `Registry<T>` (fábricas, criação sob demanda), `EventBus` (ids de evento em texto, não RTTI, porque `type_info` não é confiável entre bibliotecas com símbolos ocultos), `ModuleContext` (hoje: `drivers()` e `events()`), `IModule`, `MYDB_DYNAMIC_MODULE` e `moduleFileStem` ("example.hello" → `mydb_example_hello`, para pular módulo desligado sem abrir o arquivo).
+   - `app/ModuleHost`: módulos estáticos e dinâmicos, checagem de `apiVersion`, nome do arquivo, duplicados, módulos desligados e `discover()`. Mantém as bibliotecas vivas mais tempo que os registries.
+   - `modules/example_hello`: módulo dinâmico que registra um driver de exemplo. CMake: `mydb_add_dynamic_module` e `mydb_check_module_dependencies` (só `mydb_core`/`mydb_sdk`); `tools/check_module_deps.py` confere os `#include` (lint no CTest e na CI). `CMAKE_POSITION_INDEPENDENT_CODE ON`, porque os módulos linkam o core estático.
+   - Testes: 90 (splitter com teste de propriedade em blocos de 1 a 64 bytes, 16 MB com memória constante, token de 4 MB). Benchmark: 100 MB em ~0,96 s em release (~105 MB/s), retendo no máximo 1 byte. CI ganhou o job `coverage` (gcovr, ≥ 90% em `src/core/sql/`).
 
 ---
 
@@ -126,7 +135,7 @@ Os detalhes estão no `CLAUDE.md` §1. Resumo:
    - **O usuário faz o push.** O agente commita localmente e acompanha a CI depois.
    - O `CMakeUserPresets.json` local (não versionado) tem os presets `win-debug` e `win-release` com os caminhos desta máquina.
 7. **[Sugestão] Triplet estático no Windows** (`x64-windows-static-md`): eliminaria `spdlog.dll`, `fmt.dll`, `gtest*.dll` e `benchmark*.dll` e reduziria os módulos carregados na inicialização. Não foi feito para não divergir da CI sem medir.
-8. **Próximo passo: Fase 1** (`CLAUDE.md` §5): modelos do core, interfaces da §4.2, `SqlTokenizer`/`SqlSplitter` com testes extensos, `sdk/` (`IModule`, `ModuleContext`, registries, `ModuleLoader`, `EventBus`) e a checagem de dependências entre módulos.
+8. **[Fase 1] Falta:** o push e a CI verde (inclusive o job `coverage`). Se a cobertura ficar abaixo de 90%, o gcovr aponta as linhas na anotação do passo. **Próximo passo depois: Fase 2** (driver MySQL/MariaDB como módulo dinâmico `mydb_driver_mysql`, libmariadb via vcpkg, suíte de contrato com docker-compose).
 
 ---
 

@@ -32,12 +32,12 @@ struct GeneratedColumn {
 
 struct Column {
     std::string name;
-    std::string typeName;   ///< ex.: "VARCHAR", "INT", "NUMERIC"
-    std::string lengthSet;  ///< o que vai entre parênteses: "255", "10,2", "'a','b'"; vazio se não houver
+    std::string typeName;  ///< ex.: "VARCHAR", "INT", "NUMERIC"
+    std::string lengthSet; ///< o que vai entre parênteses: "255", "10,2", "'a','b'"; vazio se não houver
     bool isUnsigned{false};
     bool nullable{true};
     ColumnDefault defaultValue;
-    std::string onUpdate;   ///< ex.: "CURRENT_TIMESTAMP" (MySQL); vazio se não houver
+    std::string onUpdate; ///< ex.: "CURRENT_TIMESTAMP" (MySQL); vazio se não houver
     std::string charset;
     std::string collation;
     std::string comment;

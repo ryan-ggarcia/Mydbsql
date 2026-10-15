@@ -10,20 +10,28 @@ bool isSpace(char c) noexcept {
     return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
 }
 
-bool isDigit(char c) noexcept { return c >= '0' && c <= '9'; }
+bool isDigit(char c) noexcept {
+    return c >= '0' && c <= '9';
+}
 
-bool isAsciiLetter(char c) noexcept { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'); }
+bool isAsciiLetter(char c) noexcept {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+}
 
 /// Bytes >= 0x80 fazem parte de identificadores UTF-8 sem aspas.
-bool isWordStart(char c) noexcept { return isAsciiLetter(c) || c == '_' || static_cast<unsigned char>(c) >= 0x80; }
+bool isWordStart(char c) noexcept {
+    return isAsciiLetter(c) || c == '_' || static_cast<unsigned char>(c) >= 0x80;
+}
 
-bool isWordChar(char c) noexcept { return isWordStart(c) || isDigit(c) || c == '$'; }
+bool isWordChar(char c) noexcept {
+    return isWordStart(c) || isDigit(c) || c == '$';
+}
 
 /// Lê um token já classificado. Concentra o "preciso de mais dados" para não repetir em cada caso.
 class Reader {
 public:
     Reader(std::string_view text, std::size_t offset, bool finalInput, SqlToken& out) noexcept
-        : m_text(text), m_offset(offset), m_final(finalInput), m_out(out) {}
+        : m_text(text), m_offset(offset), m_final(finalInput), m_out(&out) {}
 
     [[nodiscard]] std::size_t size() const noexcept { return m_text.size(); }
     [[nodiscard]] bool finalInput() const noexcept { return m_final; }
@@ -31,17 +39,17 @@ public:
     [[nodiscard]] char at(std::size_t index) const noexcept { return m_text[index]; }
     [[nodiscard]] std::string_view text() const noexcept { return m_text; }
 
-    Status token(SqlTokenKind kind, std::size_t end, bool complete = true) const noexcept {
-        m_out = SqlToken{.kind = kind, .offset = m_offset, .length = end - m_offset, .complete = complete};
+    [[nodiscard]] Status token(SqlTokenKind kind, std::size_t end, bool complete = true) const noexcept {
+        *m_out = SqlToken{.kind = kind, .offset = m_offset, .length = end - m_offset, .complete = complete};
         return Status::Token;
     }
 
     /// Chegou ao fim do texto sem fechar o token.
-    Status unterminated(SqlTokenKind kind) const noexcept {
+    [[nodiscard]] Status unterminated(SqlTokenKind kind) const noexcept {
         return m_final ? token(kind, m_text.size(), false) : Status::NeedMore;
     }
 
-    Status lineComment(std::size_t from) const noexcept {
+    [[nodiscard]] Status lineComment(std::size_t from) const noexcept {
         const std::size_t newline = m_text.find('\n', from);
         if (newline == std::string_view::npos) {
             // Comentário de linha sem quebra no fim da entrada final está completo.
@@ -50,7 +58,7 @@ public:
         return token(SqlTokenKind::LineComment, newline);
     }
 
-    Status blockComment(bool nested) const noexcept {
+    [[nodiscard]] Status blockComment(bool nested) const noexcept {
         int depth = 1;
         std::size_t i = m_offset + 2;
         while (i < m_text.size()) {
@@ -74,7 +82,7 @@ public:
     }
 
     /// Texto entre `close`, com fechamento duplicado como escape ('' ou ``) e, opcionalmente, barra.
-    Status quoted(std::size_t bodyStart, char close, bool backslash, SqlTokenKind kind) const noexcept {
+    [[nodiscard]] Status quoted(std::size_t bodyStart, char close, bool backslash, SqlTokenKind kind) const noexcept {
         std::size_t i = bodyStart;
         while (i < m_text.size()) {
             const char c = m_text[i];
@@ -105,7 +113,7 @@ private:
     std::string_view m_text;
     std::size_t m_offset;
     bool m_final;
-    SqlToken& m_out;
+    SqlToken* m_out; // destino do token lido; o Reader não é dono
 };
 
 Status readDollar(const Reader& r, std::size_t offset) {

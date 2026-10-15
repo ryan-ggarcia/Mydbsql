@@ -15,7 +15,9 @@ bool isSpace(char c) noexcept {
     return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
 }
 
-char toUpperAscii(char c) noexcept { return (c >= 'a' && c <= 'z') ? static_cast<char>(c - 'a' + 'A') : c; }
+char toUpperAscii(char c) noexcept {
+    return (c >= 'a' && c <= 'z') ? static_cast<char>(c - 'a' + 'A') : c;
+}
 
 bool startsWithNoCase(std::string_view text, std::string_view prefix) noexcept {
     return text.size() >= prefix.size() &&
@@ -29,14 +31,13 @@ bool isOneOf(std::string_view word, const std::array<std::string_view, N>& words
 }
 
 constexpr std::array<std::string_view, 5> kRoutineObjects{"PROCEDURE", "FUNCTION", "TRIGGER", "EVENT", "PACKAGE"};
-constexpr std::array<std::string_view, 11> kPlainObjects{"TABLE", "VIEW",   "INDEX",  "DATABASE",   "SCHEMA", "USER",
-                                                         "ROLE",  "SEQUENCE", "TYPE", "TABLESPACE", "SERVER"};
+constexpr std::array<std::string_view, 11> kPlainObjects{"TABLE", "VIEW",     "INDEX", "DATABASE",   "SCHEMA", "USER",
+                                                         "ROLE",  "SEQUENCE", "TYPE",  "TABLESPACE", "SERVER"};
 // "END IF", "END LOOP"…: fecham blocos que não são contados (só BEGIN e CASE abrem nível).
 constexpr std::array<std::string_view, 5> kUncountedBlockEnds{"IF", "LOOP", "WHILE", "REPEAT", "FOR"};
 
 bool isInsignificant(SqlTokenKind kind) noexcept {
-    return kind == SqlTokenKind::Whitespace || kind == SqlTokenKind::LineComment ||
-           kind == SqlTokenKind::BlockComment;
+    return kind == SqlTokenKind::Whitespace || kind == SqlTokenKind::LineComment || kind == SqlTokenKind::BlockComment;
 }
 
 } // namespace
@@ -78,7 +79,9 @@ void SqlSplitter::finish(const Sink& sink) {
 std::vector<SqlStatement> SqlSplitter::split(std::string_view text, const SqlSyntax& syntax) {
     std::vector<SqlStatement> statements;
     SqlSplitter splitter(syntax);
-    const Sink sink = [&statements](SqlStatement&& statement) { statements.push_back(std::move(statement)); };
+    const Sink sink = [&statements](SqlStatement&& statement) {
+        statements.push_back(std::move(statement));
+    };
     splitter.feed(text, sink);
     splitter.finish(sink);
     return statements;

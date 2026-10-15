@@ -13,7 +13,9 @@ ModuleHost::ModuleHost(const infra::platform::IPlatform& platform) : m_platform(
 
 ModuleHost::~ModuleHost() = default;
 
-void ModuleHost::setDisabled(std::set<std::string, std::less<>> moduleIds) { m_disabled = std::move(moduleIds); }
+void ModuleHost::setDisabled(std::set<std::string, std::less<>> moduleIds) {
+    m_disabled = std::move(moduleIds);
+}
 
 bool ModuleHost::addBuiltin(sdk::IModule& module) {
     if (m_disabled.contains(module.id())) {
@@ -49,8 +51,8 @@ bool ModuleHost::loadDynamic(const std::filesystem::path& file) {
     const sdk::Version version = module->apiVersion();
     if (!sdk::isCompatible(sdk::kApiVersion, version)) {
         throw ModuleLoadError("O módulo " + std::string(module->id()) + " foi compilado para a API " +
-                              version.toString() + ", mas este Mydbsql oferece a API " +
-                              sdk::kApiVersion.toString() + ". Atualize o módulo.");
+                              version.toString() + ", mas este Mydbsql oferece a API " + sdk::kApiVersion.toString() +
+                              ". Atualize o módulo.");
     }
     if (sdk::moduleFileStem(module->id()) != stem) {
         throw ModuleLoadError(file.string() + ": o arquivo deveria se chamar " + sdk::moduleFileStem(module->id()) +

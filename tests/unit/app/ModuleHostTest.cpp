@@ -140,9 +140,9 @@ TEST(ModuleHostTest, DiscoverListsModulesWithoutLoadingThem) {
     const auto platform = infra::platform::createPlatform();
     ModuleHost host(*platform);
     const auto files = host.discover(kExampleModule.parent_path());
-    EXPECT_NE(std::ranges::find_if(files,
-                                   [](const std::filesystem::path& f) { return f.stem() == kExampleModule.stem(); }),
-              files.end());
+    EXPECT_NE(
+        std::ranges::find_if(files, [](const std::filesystem::path& f) { return f.stem() == kExampleModule.stem(); }),
+        files.end());
     EXPECT_TRUE(std::ranges::is_sorted(files));
     EXPECT_TRUE(host.modules().empty());
     EXPECT_TRUE(host.discover(kExampleModule.parent_path() / "nao_existe").empty());

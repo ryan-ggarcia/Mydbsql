@@ -66,7 +66,9 @@ TEST(RegistryTest, RegistersFactoriesAndCreatesLazily) {
 
 TEST(RegistryTest, RejectsInvalidRegistrations) {
     Registry<IGreeter> registry;
-    const auto factory = [] { return std::make_unique<Greeter>("x"); };
+    const auto factory = [] {
+        return std::make_unique<Greeter>("x");
+    };
     registry.add("a", "A", factory);
     EXPECT_THROW(registry.add("a", "A de novo", factory), RegistryError);
     EXPECT_THROW(registry.add("", "Sem id", factory), RegistryError);

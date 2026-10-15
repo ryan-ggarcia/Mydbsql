@@ -41,8 +41,11 @@ using ModuleEntryFunction = IModule*();
 
 /// Define o ponto de entrada de um módulo dinâmico. Use uma vez, num .cpp do módulo.
 /// MYDB_MODULE_EXPORT é definido pelo CMake (mydb_add_dynamic_module).
-#define MYDB_DYNAMIC_MODULE(ModuleType)                                                                            \
-    extern "C" MYDB_MODULE_EXPORT ::mydb::sdk::IModule* mydb_module_entry() {                                      \
-        static ModuleType instance;                                                                                \
-        return &instance;                                                                                          \
+// Uma macro é o único jeito de gerar a função extern "C" exportada no módulo.
+// NOLINTBEGIN(cppcoreguidelines-macro-usage,bugprone-macro-parentheses)
+#define MYDB_DYNAMIC_MODULE(ModuleType)                                                                                \
+    extern "C" MYDB_MODULE_EXPORT ::mydb::sdk::IModule* mydb_module_entry() {                                          \
+        static ModuleType instance;                                                                                    \
+        return &instance;                                                                                              \
     }
+// NOLINTEND(cppcoreguidelines-macro-usage,bugprone-macro-parentheses)

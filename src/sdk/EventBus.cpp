@@ -17,7 +17,9 @@ EventBus::Subscription& EventBus::Subscription::operator=(Subscription&& other) 
     return *this;
 }
 
-EventBus::Subscription::~Subscription() { reset(); }
+EventBus::Subscription::~Subscription() {
+    reset();
+}
 
 void EventBus::Subscription::reset() noexcept {
     if (m_bus != nullptr) {
