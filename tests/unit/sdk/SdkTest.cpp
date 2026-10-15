@@ -39,7 +39,7 @@ struct IGreeter {
 };
 
 struct Greeter final : IGreeter {
-    explicit Greeter(std::string text) : text(std::move(text)) {}
+    explicit Greeter(std::string greeting) : text(std::move(greeting)) {}
     [[nodiscard]] std::string greet() const override { return text; }
     std::string text;
 };
