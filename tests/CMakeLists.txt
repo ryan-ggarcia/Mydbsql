@@ -56,13 +56,18 @@ gtest_discover_tests(mydb_tests
 
 add_executable(mydb_contract_tests
     contract/MySqlContractTest.cpp
+    contract/SessionEndToEndTest.cpp
 )
 target_link_libraries(mydb_contract_tests PRIVATE
     mydb_driver_mysql_impl
+    mydb::app_support
+    mydb::settings
+    mydb::services_session
     GTest::gtest_main)
 target_include_directories(mydb_contract_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_definitions(mydb_contract_tests PRIVATE
-    MYDB_MARIADB_PLUGIN_DIR="${MYDB_MODULE_OUTPUT_DIR}/mariadb-plugins")
+    MYDB_MARIADB_PLUGIN_DIR="${MYDB_MODULE_OUTPUT_DIR}/mariadb-plugins"
+    MYDB_MODULE_DIR="${MYDB_MODULE_OUTPUT_DIR}")
 add_dependencies(mydb_contract_tests mydb_driver_mysql)
 mydb_set_warnings(mydb_contract_tests)
 if(MSVC)
@@ -85,6 +90,18 @@ if(Python3_Interpreter_FOUND)
 endif()
 
 if(MYDB_BUILD_APP)
+    add_executable(mydb_ui_tests ui/SessionManagerDialogTest.cpp)
+    set_target_properties(mydb_ui_tests PROPERTIES AUTOMOC ON)
+    target_link_libraries(mydb_ui_tests PRIVATE mydb::ui mydb::settings Qt6::Test)
+    target_include_directories(mydb_ui_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_compile_definitions(mydb_ui_tests PRIVATE QT_NO_KEYWORDS)
+    mydb_set_warnings(mydb_ui_tests)
+    add_test(NAME ui.session_manager COMMAND mydb_ui_tests -platform offscreen)
+    set_tests_properties(ui.session_manager PROPERTIES
+        LABELS ui
+        TIMEOUT 120
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
     add_test(NAME ui.measure_startup_smoke
         COMMAND mydbsql --measure-startup --settle-ms=0 -platform offscreen)
     set_tests_properties(ui.measure_startup_smoke PROPERTIES

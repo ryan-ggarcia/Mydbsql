@@ -63,7 +63,7 @@ public:
     /// JSON com as sessões escolhidas (todas, se `ids` vier vazio). Nunca inclui senhas.
     [[nodiscard]] std::string exportJson(std::span<const std::string> ids = {}) const;
     /// Acrescenta as sessões de um JSON exportado, com ids novos. Devolve quantas entraram.
-    std::size_t importJson(std::string_view json);
+    std::size_t importJson(std::string_view text);
 
 private:
     Session& at(std::string_view id);

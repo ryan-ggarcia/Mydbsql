@@ -38,7 +38,7 @@ if(MYDB_BUILD_TESTS)
 endif()
 
 if(MYDB_BUILD_APP)
-    find_package(Qt6 6.5 REQUIRED COMPONENTS Widgets)
+    find_package(Qt6 6.5 REQUIRED COMPONENTS Widgets Test)
 endif()
 
 add_subdirectory(src)

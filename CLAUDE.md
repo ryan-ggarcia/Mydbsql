@@ -676,8 +676,8 @@ A partir da Fase 1, toda funcionalidade entra como **módulo** (§2.4). Se uma t
 - [x] `ISettingsStore` (JSON) com migração por versão de esquema.
 - [x] `SessionRepository`: CRUD de sessões em árvore com pastas, cor, comentário, estatísticas; exportar e importar.
 - [x] `ICredentialStore` (APIs nativas, ADR-0009) + fallback em memória para testes e para SOs sem cofre.
-- [ ] UI: **Gerenciador de sessões** (árvore + abas Configurações, SSH, SSL, Avançado), testar conexão.
-- **Pronto quando:** dá para criar uma sessão MySQL, salvar, reabrir o app e conectar sem digitar a senha de novo.
+- [x] UI: **Gerenciador de sessões** (árvore + abas Configurações, SSH, SSL, Avançado), testar conexão.
+- **Pronto quando:** dá para criar uma sessão MySQL, salvar, reabrir o app e conectar sem digitar a senha de novo. *(Coberto pelo teste `SessionEndToEndTest` com o cofre real do SO, o JSON em disco e o driver como plugin; falta a CI.)*
 
 ### Fase 4 — Janela principal e navegação
 - [ ] `MainWindow`: árvore de objetos à esquerda, abas à direita, log embaixo (dock). Menus e toolbars são montados a partir do `CommandRegistry`, sem itens fixos no código da janela.
@@ -803,7 +803,7 @@ cmake --build --preset debug --target clang-tidy
 cmake --build --preset debug --target format        # corrige; format-check só verifica
 
 # orçamento de inicialização (§2.5)
-build/release/src/app/mydbsql --measure-startup=run1.json
+build/release/bin/mydbsql --measure-startup=run1.json
 python tools/check_budget.py --startup run1.json run2.json run3.json --budget bench/budget.json --baseline bench/baseline/<plataforma>.json
 ```
 

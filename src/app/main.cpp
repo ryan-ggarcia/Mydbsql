@@ -1,28 +1,52 @@
+// Raiz de composição (CLAUDE.md §4.3, D): o único lugar que conhece as implementações concretas.
+
 #include "app/Application.hpp"
 #include "app/CommandLine.hpp"
+#include "app/ModuleDriverCatalog.hpp"
+#include "app/ModuleHost.hpp"
 #include "app/StartupProbe.hpp"
+#include "infra/credentials/MemoryCredentialStore.hpp"
 #include "infra/logging/Logging.hpp"
 #include "infra/platform/IPlatform.hpp"
+#include "infra/platform/SystemCredentialStore.hpp"
+#include "infra/settings/JsonSettingsStore.hpp"
+#include "services/session/SessionConnector.hpp"
+#include "services/session/SessionRepository.hpp"
+#include "ui/common/QtText.hpp"
+#include "ui/dialogs/SessionManagerDialog.hpp"
 #include "ui/main/MainWindow.hpp"
+
+#include <QMessageBox>
 
 #include <spdlog/spdlog.h>
 
 #include <chrono>
 #include <cstdio>
 #include <exception>
+#include <filesystem>
 #include <memory>
+#include <string_view>
+#include <system_error>
 #include <vector>
 
 namespace {
 
 constexpr bool kDebugBuild = MYDB_DEBUG_BUILD != 0;
 
-} // namespace
+namespace platform = mydb::infra::platform;
+namespace session = mydb::services::session;
 
-namespace {
+/// Guarda uma cópia do arquivo de sessões ilegível antes que um "Salvar" o sobrescreva.
+std::filesystem::path backupUnreadableSessions(const std::filesystem::path& configDirectory) {
+    const std::filesystem::path file = configDirectory / "sessions.json";
+    std::filesystem::path backup = file;
+    backup += ".bak";
+    std::error_code error;
+    std::filesystem::copy_file(file, backup, std::filesystem::copy_options::overwrite_existing, error);
+    return error ? std::filesystem::path() : backup;
+}
 
 int run(int argc, char** argv, std::chrono::steady_clock::time_point startedAt) {
-    namespace platform = mydb::infra::platform;
     namespace logging = mydb::infra::logging;
 
     const std::vector<const char*> args(argv, argv + argc); // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
@@ -37,19 +61,62 @@ int run(int argc, char** argv, std::chrono::steady_clock::time_point startedAt) 
                          .console = kDebugBuild,
                          .verbose = kDebugBuild});
 
+    // No Windows, o motor de fontes GDI abre a primeira janela em metade do tempo do DirectWrite
+    // (ADR-0010). Quem definir QT_QPA_PLATFORM ou passar -platform continua mandando.
+    constexpr std::string_view kDefaultPlatform = MYDB_DEFAULT_QPA_PLATFORM;
+    if (!kDefaultPlatform.empty() && qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
+        qputenv("QT_QPA_PLATFORM",
+                QByteArray(kDefaultPlatform.data(), static_cast<qsizetype>(kDefaultPlatform.size())));
+    }
+
     int exitCode = 0;
     {
         mydb::app::Application app(argc, argv, /*enableWatchdog=*/kDebugBuild);
-        mydb::ui::MainWindow window;
+
+        const std::filesystem::path configDirectory = os->standardDirectory(platform::StandardDirectory::Config);
+        mydb::infra::settings::JsonSettingsStore settings(configDirectory);
+        std::unique_ptr<mydb::core::ICredentialStore> credentials = platform::createSystemCredentialStore();
+        if (!credentials) {
+            spdlog::warn("Sem cofre de senhas no sistema: as senhas valem só até fechar o app");
+            credentials = std::make_unique<mydb::infra::credentials::MemoryCredentialStore>();
+        }
+
+        // Ordem de destruição (inversa): janela e conexões antes do conector, do catálogo e dos módulos.
+        mydb::app::ModuleHost modules(*os);
+        mydb::app::ModuleDriverCatalog drivers(modules, os->pluginDirectory());
+        session::SessionRepository repository(settings, *credentials);
+        session::SessionConnector connector(drivers, *credentials);
+        std::unique_ptr<mydb::ui::MainWindow> mainWindow;
+
+        std::string loadError;
+        try {
+            repository.load();
+        } catch (const session::SettingsError& error) {
+            loadError = error.what();
+        }
+
+        mydb::ui::SessionManagerDialog manager(repository, connector, drivers.availableDrivers(),
+                                               credentials->persistent());
+        manager.setConnectedHandler(
+            [&mainWindow](const session::Session& opened, std::unique_ptr<mydb::core::IConnection> connection) {
+                mainWindow = std::make_unique<mydb::ui::MainWindow>();
+                mainWindow->attachConnection(std::move(connection), mydb::ui::toQt(opened.name));
+                mainWindow->show();
+            });
 
         std::unique_ptr<mydb::app::StartupProbe> probe;
         if (options.measureStartup) {
             probe = std::make_unique<mydb::app::StartupProbe>(*os, startedAt, options);
         }
-
-        window.show();
+        manager.show();
         if (probe) {
-            probe->attach(window);
+            probe->attach(manager);
+        }
+        if (!loadError.empty()) {
+            const std::filesystem::path backup = backupUnreadableSessions(configDirectory);
+            QMessageBox::warning(&manager, manager.windowTitle(),
+                                 QObject::tr("Não foi possível ler as sessões salvas:\n%1\n\nCópia do arquivo: %2")
+                                     .arg(mydb::ui::toQt(loadError), mydb::ui::pathToQt(backup)));
         }
         spdlog::info("Mydbsql {} iniciado ({})", MYDB_VERSION, os->name());
         exitCode = mydb::app::Application::exec();

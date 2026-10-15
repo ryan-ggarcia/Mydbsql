@@ -158,7 +158,7 @@ jobs:
       - name: --measure-startup (3 execuções)
         shell: bash
         run: |
-          exe=build/release/src/app/mydbsql
+          exe=build/release/bin/mydbsql
           run() { if [ "$RUNNER_OS" = "Linux" ]; then xvfb-run -a "$@"; else "$@"; fi; }
           for i in 1 2 3; do run python tools/ci_step.py -- "$exe" "--measure-startup=startup-$i.json"; cat "startup-$i.json"; done
       - name: Benchmarks

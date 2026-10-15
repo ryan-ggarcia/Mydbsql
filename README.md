@@ -44,8 +44,8 @@ Outros presets: `release` (LTO, `-O2`, símbolos ocultos), `asan` (AddressSaniti
 ## Medir a inicialização
 
 ```bash
-build/release/src/app/mydbsql --measure-startup            # JSON na saída padrão
-build/release/src/app/mydbsql --measure-startup=run1.json  # JSON em arquivo
+build/release/bin/mydbsql --measure-startup            # JSON na saída padrão
+build/release/bin/mydbsql --measure-startup=run1.json  # JSON em arquivo
 python tools/check_budget.py --startup run1.json run2.json run3.json \
     --budget bench/budget.json --baseline bench/baseline/linux.json
 ```

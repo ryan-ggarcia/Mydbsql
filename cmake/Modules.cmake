@@ -1,4 +1,9 @@
-set(MYDB_MODULE_OUTPUT_DIR "${PROJECT_BINARY_DIR}/modules")
+set(MYDB_RUNTIME_OUTPUT_DIR "${PROJECT_BINARY_DIR}/bin")
+if(WIN32)
+    set(MYDB_MODULE_OUTPUT_DIR "${MYDB_RUNTIME_OUTPUT_DIR}/modules")
+else()
+    set(MYDB_MODULE_OUTPUT_DIR "${PROJECT_BINARY_DIR}/lib/mydbsql/modules")
+endif()
 set(MYDB_MODULE_ALLOWED_LINKS mydb::core mydb::sdk mydb_core mydb_sdk)
 
 function(mydb_add_dynamic_module)
