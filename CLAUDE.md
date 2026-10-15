@@ -658,7 +658,7 @@ A partir da Fase 1, toda funcionalidade entra como **módulo** (§2.4). Se uma t
 - [x] Testes unitários extensos do splitter (é a peça mais propensa a bugs). Benchmark: dividir 100 MB de SQL em streaming com memória constante. *(~105 MB/s em release no Windows; no máximo 1 byte retido entre blocos.)*
 - [x] `sdk/`: `IModule`, `ModuleContext`, registries (§2.4); `ModuleLoader` (estático + dinâmico, checagem de `apiVersion`); `EventBus`. *(O carregador se chama `app::ModuleHost`.)*
 - [x] Checagem de dependências no CMake: módulos só linkam `mydb_core` + `mydb_sdk`.
-- **Pronto quando:** cobertura ≥ 90% em `core/sql` e um módulo de exemplo (`modules/example_hello`) é carregado dinamicamente sem mudanças fora da pasta dele. *(Módulo de exemplo: feito e testado. Cobertura: medida pelo job `coverage` da CI, que falha abaixo de 90%.)*
+- **Pronto quando:** cobertura ≥ 90% em `core/sql` e um módulo de exemplo (`modules/example_hello`) é carregado dinamicamente sem mudanças fora da pasta dele. *(Concluída em 2026-10-15: CI verde nos 13 jobs, inclusive o de cobertura, que falha abaixo de 90%.)*
 
 ### Fase 2 — Primeiro driver: MySQL/MariaDB
 - [ ] Wrapper RAII para `MYSQL*` e `MYSQL_RES*`.

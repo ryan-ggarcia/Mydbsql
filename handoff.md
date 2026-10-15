@@ -2,7 +2,7 @@
 
 Contexto para qualquer agente de IA (ou pessoa) retomar o trabalho. **Leia este arquivo inteiro e depois o `CLAUDE.md`**, que é a fonte de verdade do projeto. Este arquivo descreve *o que aconteceu e o que falta*; o `CLAUDE.md` descreve *o que construir e como*.
 
-Última atualização: 2026-10-15, com a **Fase 1** implementada localmente (falta a CI confirmar a cobertura).
+Última atualização: 2026-10-15, com a **Fase 1 concluída** (CI verde nos 13 jobs).
 
 ---
 
@@ -10,7 +10,7 @@ Contexto para qualquer agente de IA (ou pessoa) retomar o trabalho. **Leia este 
 
 - **Projeto:** Mydbsql, um cliente gráfico de bancos de dados inspirado no HeidiSQL, a ser escrito **do zero em C++20**, orientado a objetos, com **SOLID**, **leve, rápido, fácil de estender** e **compatível com Linux, Windows e macOS**.
 - **Estado do repositório:** análise e **Fase 0** commitadas e no GitHub (`main`). Fase 0: CMake, presets, vcpkg, `infra/platform`, logging, `DbError`, janela vazia com `--measure-startup`, testes, benchmarks, CI e ADRs 0001–0006 (§3, item 9).
-- **Fase atual:** **Fase 1** (núcleo de domínio e SQL), implementada e verde no Windows: 90 testes, clang-tidy limpo. Falta a CI confirmar Linux/macOS e a cobertura ≥ 90% em `core/sql` (job `coverage`). Fase 0 concluída em 2026-10-14. A análise do HeidiSQL e do MySQL Workbench está concluída (`CLAUDE.md` §1.5 e §1.6).
+- **Fase atual:** **Fase 1 concluída** em 2026-10-15 (CI verde nos 13 jobs, cobertura ≥ 90% em `core/sql`). Próximo passo: **Fase 2** (driver MySQL/MariaDB). A análise do HeidiSQL e do MySQL Workbench está concluída (`CLAUDE.md` §1.5 e §1.6).
 
 ---
 
@@ -135,7 +135,7 @@ Os detalhes estão no `CLAUDE.md` §1. Resumo:
    - **O usuário faz o push.** O agente commita localmente e acompanha a CI depois.
    - O `CMakeUserPresets.json` local (não versionado) tem os presets `win-debug` e `win-release` com os caminhos desta máquina.
 7. **[Sugestão] Triplet estático no Windows** (`x64-windows-static-md`): eliminaria `spdlog.dll`, `fmt.dll`, `gtest*.dll` e `benchmark*.dll` e reduziria os módulos carregados na inicialização. Não foi feito para não divergir da CI sem medir.
-8. **[Fase 1] Falta:** o push e a CI verde (inclusive o job `coverage`). Se a cobertura ficar abaixo de 90%, o gcovr aponta as linhas na anotação do passo. **Próximo passo depois: Fase 2** (driver MySQL/MariaDB como módulo dinâmico `mydb_driver_mysql`, libmariadb via vcpkg, suíte de contrato com docker-compose).
+8. **Próximo passo: Fase 2** (driver MySQL/MariaDB como módulo dinâmico `mydb_driver_mysql`, libmariadb via vcpkg, suíte de contrato com docker-compose). Antes de qualquer decisão fora do plano do `CLAUDE.md`, pergunte ao usuário (preferência registrada em 2026-10-15).
 
 ---
 
