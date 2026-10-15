@@ -166,8 +166,9 @@ bool SqlSplitter::tryDelimiterCommand(bool finalInput, bool& needMore) {
     while (!argument.empty() && isSpace(argument.front())) {
         argument.remove_prefix(1);
     }
-    const auto argumentEnd = std::ranges::find_if(argument, isSpace);
-    argument = argument.substr(0, static_cast<std::size_t>(argumentEnd - argument.begin()));
+    const auto argumentLength =
+        static_cast<std::size_t>(std::ranges::distance(argument.begin(), std::ranges::find_if(argument, isSpace)));
+    argument = argument.substr(0, argumentLength);
     if (argument.empty()) {
         return false;
     }
