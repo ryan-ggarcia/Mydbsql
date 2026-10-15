@@ -2,7 +2,7 @@
 
 Contexto para qualquer agente de IA (ou pessoa) retomar o trabalho. **Leia este arquivo inteiro e depois o `CLAUDE.md`**, que é a fonte de verdade do projeto. Este arquivo descreve *o que aconteceu e o que falta*; o `CLAUDE.md` descreve *o que construir e como*.
 
-Última atualização: 2026-10-15, com a **Fase 2** (driver MySQL/MariaDB) implementada e verde localmente; falta a CI.
+Última atualização: 2026-10-15, com a **Fase 3** (sessões, configurações e credenciais) implementada localmente; falta a CI das Fases 2 e 3.
 
 ---
 
@@ -10,7 +10,7 @@ Contexto para qualquer agente de IA (ou pessoa) retomar o trabalho. **Leia este 
 
 - **Projeto:** Mydbsql, um cliente gráfico de bancos de dados inspirado no HeidiSQL, a ser escrito **do zero em C++20**, orientado a objetos, com **SOLID**, **leve, rápido, fácil de estender** e **compatível com Linux, Windows e macOS**.
 - **Estado do repositório:** análise e **Fase 0** commitadas e no GitHub (`main`). Fase 0: CMake, presets, vcpkg, `infra/platform`, logging, `DbError`, janela vazia com `--measure-startup`, testes, benchmarks, CI e ADRs 0001–0006 (§3, item 9).
-- **Fase atual:** **Fase 2** (driver MySQL/MariaDB) implementada: 123 testes verdes no Windows, inclusive 22 de contrato contra MySQL 8.0.45 e MariaDB 11.4.12 locais. Falta a CI (job `integration` novo). Fases 0 e 1 concluídas. Análise do HeidiSQL e do MySQL Workbench concluída (`CLAUDE.md` §1.5 e §1.6).
+- **Fase atual:** **Fase 3** implementada: 140 testes verdes no Windows (unitários, UI com Qt Test, contrato e ponta a ponta com o cofre real). Commits locais `55cf980`, `3bf1908` e `3aa7c81` aguardando o push do usuário. Fases 0 e 1 concluídas; Fase 2 aguardando a CI. Análise do HeidiSQL e do MySQL Workbench concluída.
 
 ---
 
@@ -72,6 +72,14 @@ Contexto para qualquer agente de IA (ou pessoa) retomar o trabalho. **Leia este 
    - `sdk::ModuleContext::currentModuleFile()` (acréscimo de API: o driver acha os plugins da libmariadb ao lado de si) e `app::ModuleHost::driver(id, pasta)`, que carrega `driver.<id>` sob demanda.
    - Testes: unitários do dialeto, do parser e da versão; `ModuleHostTest.MySqlDriverIsLoadedOnlyWhenRequested` (nem o driver nem a libmariadb estão na memória antes de pedir); suíte de contrato `tests/contract/MySqlContractTest.cpp` (executável `mydb_contract_tests`, rótulo `integration`, servidores por `MYDB_TEST_MYSQL` e `MYDB_TEST_MARIADB`). CI: `tests/docker-compose.yml` e job `integration`.
    - Servidores locais (fora do repositório, em `C:\Users\Iberika\tools\db`): MySQL 8.0.45 da instalação existente com pasta própria `mysql80-data` (porta 3307) e MariaDB 11.4.12 portátil `mariadb-11.4.12-winx64` com `mariadb114-data` (porta 3308). Ambos com `root` sem senha, só em 127.0.0.1. Comandos na §8.
+
+12. **2026-10-15, Fase 3.** Decisões do usuário, perguntadas antes: cofre de senhas com as APIs nativas de cada SO (ADR-0009, sem QtKeychain) e motor de fontes GDI no Windows (ADR-0010). Feito:
+   - `ISettingsStore` + `infra/settings/JsonSettingsStore` (gravação atômica, nomes validados) e `MemorySettingsStore`.
+   - `ICredentialStore::persistent()`; cofres nativos em `infra/platform` (Credential Manager, Keychain, libsecret por dlopen) e `infra/credentials/MemoryCredentialStore` como alternativa.
+   - `services/session`: `Session`, `SessionRepository` (pastas, cor, comentário, estatísticas, duplicar, exportar e importar sem senhas, esquema versionado) e `SessionConnector` (senha guardada ou digitada só em memória). `core::IDriverCatalog` + `app::ModuleDriverCatalog` (drivers listados pelo nome do arquivo, carregados só ao conectar).
+   - `ui/dialogs/SessionManagerDialog` (árvore + abas Configurações, SSH, SSL, Avançado; testar e abrir em thread de trabalho) e `main.cpp` como raiz de composição; a janela principal só existe depois de conectar.
+   - O build espelha a instalação: executável em `build/<preset>/bin`, módulos em `bin/modules` (Windows) ou `lib/mydbsql/modules` (Linux, macOS).
+   - Medição: com texto na primeira janela, o DirectWrite custava ~110 ms para carregar as fontes; com o GDI, o início no Windows ficou em ~68 ms e ~40,5 MB. A memória privada subiu ~18% em relação ao baseline da janela vazia: regenerar os baselines a partir da CI.
 
 ---
 
@@ -143,7 +151,7 @@ Os detalhes estão no `CLAUDE.md` §1. Resumo:
    - **O usuário faz o push.** O agente commita localmente e acompanha a CI depois.
    - O `CMakeUserPresets.json` local (não versionado) tem os presets `win-debug` e `win-release` com os caminhos desta máquina.
 7. **[Sugestão] Triplet estático no Windows** (`x64-windows-static-md`): eliminaria `spdlog.dll`, `fmt.dll`, `gtest*.dll` e `benchmark*.dll` e reduziria os módulos carregados na inicialização. Não foi feito para não divergir da CI sem medir.
-8. **[Fase 2] Falta:** push e CI verde (job `integration` novo; no Linux a libmariadb é estática e os plugins de autenticação podem se comportar diferente). Pendências conhecidas, todas dentro do plano: `localTimeZone` e `keepAlive` da sessão ainda não aplicados (Fases 3 e 4); o SRID das colunas espaciais não é lido; com a libmariadb 3.4, o modo SSL "Disabled" ainda usa TLS se o servidor oferecer. **Depois: Fase 3** (sessões, configurações e credenciais).
+8. **Falta:** push e CI verde das Fases 2 e 3 (jobs `integration` e de UI novos; cofre do macOS só é exercitado na CI). Regenerar `bench/baseline/*.json` com as anotações "Medição" da CI, porque a primeira janela mudou. Pendências dentro do plano: `localTimeZone` e `keepAlive` (Fase 4), SRID das colunas espaciais, túnel SSH (Fase 11). **Depois: Fase 4** (janela principal e navegação).
 
 ---
 
