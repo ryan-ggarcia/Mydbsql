@@ -2,7 +2,7 @@
 
 Contexto para qualquer agente de IA (ou pessoa) retomar o trabalho. **Leia este arquivo inteiro e depois o `CLAUDE.md`**, que é a fonte de verdade do projeto. Este arquivo descreve *o que aconteceu e o que falta*; o `CLAUDE.md` descreve *o que construir e como*.
 
-Última atualização: 2026-10-15, com a **Fase 1 concluída** (CI verde nos 13 jobs).
+Última atualização: 2026-10-15, com a **Fase 2** (driver MySQL/MariaDB) implementada e verde localmente; falta a CI.
 
 ---
 
@@ -10,7 +10,7 @@ Contexto para qualquer agente de IA (ou pessoa) retomar o trabalho. **Leia este 
 
 - **Projeto:** Mydbsql, um cliente gráfico de bancos de dados inspirado no HeidiSQL, a ser escrito **do zero em C++20**, orientado a objetos, com **SOLID**, **leve, rápido, fácil de estender** e **compatível com Linux, Windows e macOS**.
 - **Estado do repositório:** análise e **Fase 0** commitadas e no GitHub (`main`). Fase 0: CMake, presets, vcpkg, `infra/platform`, logging, `DbError`, janela vazia com `--measure-startup`, testes, benchmarks, CI e ADRs 0001–0006 (§3, item 9).
-- **Fase atual:** **Fase 1 concluída** em 2026-10-15 (CI verde nos 13 jobs, cobertura ≥ 90% em `core/sql`). Próximo passo: **Fase 2** (driver MySQL/MariaDB). A análise do HeidiSQL e do MySQL Workbench está concluída (`CLAUDE.md` §1.5 e §1.6).
+- **Fase atual:** **Fase 2** (driver MySQL/MariaDB) implementada: 123 testes verdes no Windows, inclusive 22 de contrato contra MySQL 8.0.45 e MariaDB 11.4.12 locais. Falta a CI (job `integration` novo). Fases 0 e 1 concluídas. Análise do HeidiSQL e do MySQL Workbench concluída (`CLAUDE.md` §1.5 e §1.6).
 
 ---
 
@@ -64,6 +64,14 @@ Contexto para qualquer agente de IA (ou pessoa) retomar o trabalho. **Leia este 
    - `app/ModuleHost`: módulos estáticos e dinâmicos, checagem de `apiVersion`, nome do arquivo, duplicados, módulos desligados e `discover()`. Mantém as bibliotecas vivas mais tempo que os registries.
    - `modules/example_hello`: módulo dinâmico que registra um driver de exemplo. CMake: `mydb_add_dynamic_module` e `mydb_check_module_dependencies` (só `mydb_core`/`mydb_sdk`); `tools/check_module_deps.py` confere os `#include` (lint no CTest e na CI). `CMAKE_POSITION_INDEPENDENT_CODE ON`, porque os módulos linkam o core estático.
    - Testes: 90 (splitter com teste de propriedade em blocos de 1 a 64 bytes, 16 MB com memória constante, token de 4 MB). Benchmark: 100 MB em ~0,96 s em release (~105 MB/s), retendo no máximo 1 byte. CI ganhou o job `coverage` (gcovr, ≥ 90% em `src/core/sql/`).
+
+11. **2026-10-15, Fase 2** ("pode começar"). Decisões do usuário (perguntadas antes, preferência registrada): `execute()` em streaming com `IExecution` (ADR-0008) e testes locais em instâncias temporárias. Feito:
+   - vcpkg: `libmariadb` 3.4.8. No Windows ela é DLL e os plugins de autenticação (`caching_sha2_password`…) também; o CMake copia `libmariadb.dll`, a zlib e `mariadb-plugins/` para a pasta de módulos.
+   - `src/drivers/mysql/`: `MySqlServerVersion`, `MySqlDialect` (crases ou ANSI_QUOTES, escapes conforme NO_BACKSLASH_ESCAPES, LIMIT, tipos e `supports()` por versão e variante), `MySqlColumnParser` (COLUMN_DEFAULT do MySQL × MariaDB), `MySqlResultSet` (`mysql_use_result`), `MySqlExecution`, `MySqlConnection` (TLS, compressão, `queryTimeout` no servidor, script de inicialização, cancelamento por `KILL QUERY` numa conexão auxiliar) e `MySqlMetadataProvider` (information_schema em lote, SHOW CREATE).
+   - Bibliotecas: `mydb_driver_mysql_text` (sem libmariadb, testável), `mydb_driver_mysql_impl` e o plugin `mydb_driver_mysql` (id `driver.mysql`). `mydb_add_dynamic_module` aceita `LIBRARIES` (dependências permitidas do módulo).
+   - `sdk::ModuleContext::currentModuleFile()` (acréscimo de API: o driver acha os plugins da libmariadb ao lado de si) e `app::ModuleHost::driver(id, pasta)`, que carrega `driver.<id>` sob demanda.
+   - Testes: unitários do dialeto, do parser e da versão; `ModuleHostTest.MySqlDriverIsLoadedOnlyWhenRequested` (nem o driver nem a libmariadb estão na memória antes de pedir); suíte de contrato `tests/contract/MySqlContractTest.cpp` (executável `mydb_contract_tests`, rótulo `integration`, servidores por `MYDB_TEST_MYSQL` e `MYDB_TEST_MARIADB`). CI: `tests/docker-compose.yml` e job `integration`.
+   - Servidores locais (fora do repositório, em `C:\Users\Iberika\tools\db`): MySQL 8.0.45 da instalação existente com pasta própria `mysql80-data` (porta 3307) e MariaDB 11.4.12 portátil `mariadb-11.4.12-winx64` com `mariadb114-data` (porta 3308). Ambos com `root` sem senha, só em 127.0.0.1. Comandos na §8.
 
 ---
 
@@ -135,7 +143,7 @@ Os detalhes estão no `CLAUDE.md` §1. Resumo:
    - **O usuário faz o push.** O agente commita localmente e acompanha a CI depois.
    - O `CMakeUserPresets.json` local (não versionado) tem os presets `win-debug` e `win-release` com os caminhos desta máquina.
 7. **[Sugestão] Triplet estático no Windows** (`x64-windows-static-md`): eliminaria `spdlog.dll`, `fmt.dll`, `gtest*.dll` e `benchmark*.dll` e reduziria os módulos carregados na inicialização. Não foi feito para não divergir da CI sem medir.
-8. **Próximo passo: Fase 2** (driver MySQL/MariaDB como módulo dinâmico `mydb_driver_mysql`, libmariadb via vcpkg, suíte de contrato com docker-compose). Antes de qualquer decisão fora do plano do `CLAUDE.md`, pergunte ao usuário (preferência registrada em 2026-10-15).
+8. **[Fase 2] Falta:** push e CI verde (job `integration` novo; no Linux a libmariadb é estática e os plugins de autenticação podem se comportar diferente). Pendências conhecidas, todas dentro do plano: `localTimeZone` e `keepAlive` da sessão ainda não aplicados (Fases 3 e 4); o SRID das colunas espaciais não é lido; com a libmariadb 3.4, o modo SSL "Disabled" ainda usa TLS se o servidor oferecer. **Depois: Fase 3** (sessões, configurações e credenciais).
 
 ---
 
@@ -184,6 +192,7 @@ Os detalhes estão no `CLAUDE.md` §1. Resumo:
 | Qt | `C:\Users\Iberika\tools\Qt\6.11.3\msvc2022_64` (só `qtbase`, binários oficiais via `tools/fetch_qt.py`). Para rodar o `mydbsql.exe` fora do CTest, ponha `…\msvc2022_64\bin` no PATH |
 | clang-format / clang-tidy | 23.1.3 / 22.1.8 via `pip --user`, em `%APPDATA%\Python\Python314\Scripts` (fora do PATH) |
 | Build local | `tools\vsdev.cmd cmake --preset win-debug`, `… cmake --build --preset win-debug`, `… ctest --preset win-debug` (presets do `CMakeUserPresets.json` local, com 3 jobs por causa da RAM) |
+| Servidores de teste | Subir: `"C:/Program Files/MySQL/MySQL Server 8.0/bin/mysqld.exe" --no-defaults "--basedir=C:/Program Files/MySQL/MySQL Server 8.0" --datadir=C:/Users/Iberika/tools/db/mysql80-data --port=3307 --bind-address=127.0.0.1 --mysqlx=OFF --innodb-buffer-pool-size=32M --performance-schema=OFF --console` e `C:/Users/Iberika/tools/db/mariadb-11.4.12-winx64/bin/mariadbd.exe --no-defaults --datadir=C:/Users/Iberika/tools/db/mariadb114-data --port=3308 --bind-address=127.0.0.1 --innodb-buffer-pool-size=32M --console`. Parar: `mysqladmin -h 127.0.0.1 -P 3307 -u root shutdown` e `mariadb-admin -h 127.0.0.1 -P 3308 -u root shutdown`. Testes: `MYDB_TEST_MYSQL="host=127.0.0.1;port=3307;user=root;password="`, `MYDB_TEST_MARIADB` igual com a porta 3308, e `ctest --preset win-debug -L integration` |
 | Java | `C:\Users\Iberika\tools\jdk-21.0.12.1+1` (Temurin, zip; não está no PATH global) |
 | Ghidra | `C:\Users\Iberika\tools\ghidra_12.1.4_PUBLIC` (zip oficial; `rea doctor` o reconhece com `GHIDRA_INSTALL_DIR` e `JAVA_HOME` definidos) |
 | MySQL Workbench 8.0.47 | **apagado** a pedido do usuário em 2026-10-14 (a cópia extraída e os downloads). Para reanalisar: baixar `https://cdn.mysql.com//Downloads/MySQLGUITools/mysql-workbench-community-8.0.47-winx64.msi` (SHA-256 `f7a0f3c811bcec93456184bb252540cbae4ea32f9af2cc910760fccbce6767bd`) e extrair com `msiexec /a <msi> /qn TARGETDIR=<pasta nova>`. Os arquivos úteis ficam em `PFiles64\MySQL\MySQL Workbench 8.0 CE\` (`structs/`, `data/`, `modules/`, `extras/sakila_full.mwb`) |

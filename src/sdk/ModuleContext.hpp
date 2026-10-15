@@ -4,6 +4,8 @@
 #include "sdk/EventBus.hpp"
 #include "sdk/Registry.hpp"
 
+#include <filesystem>
+
 namespace mydb::sdk {
 
 using DriverRegistry = Registry<core::IDriver>;
@@ -15,6 +17,9 @@ class ModuleContext {
 public:
     [[nodiscard]] virtual DriverRegistry& drivers() = 0;
     [[nodiscard]] virtual EventBus& events() = 0;
+    /// Arquivo do módulo dinâmico que está se registrando; vazio para módulos estáticos. Serve para achar
+    /// arquivos distribuídos junto com o módulo (ex.: plugins da libmariadb).
+    [[nodiscard]] virtual std::filesystem::path currentModuleFile() const = 0;
 
 protected:
     ModuleContext() = default;

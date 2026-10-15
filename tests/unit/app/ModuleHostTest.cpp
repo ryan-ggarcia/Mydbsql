@@ -1,6 +1,7 @@
 #include "app/ModuleHost.hpp"
 
 #include "infra/platform/IPlatform.hpp"
+#include "support/MemoryCredentialStore.hpp"
 
 #include <gtest/gtest.h>
 
@@ -134,6 +135,38 @@ TEST(ModuleHostTest, IncompatibleModulesAreRejectedWithClearMessages) {
     EXPECT_NE(missing.find("mydb_nao_existe"), std::string::npos) << missing;
 
     EXPECT_TRUE(host.modules().empty());
+}
+
+TEST(ModuleHostTest, MySqlDriverIsLoadedOnlyWhenRequested) {
+    const auto platform = infra::platform::createPlatform();
+    ModuleHost host(*platform);
+    const std::filesystem::path driverFile{MYDB_MYSQL_DRIVER_PATH};
+    const std::filesystem::path directory = driverFile.parent_path();
+    ASSERT_TRUE(std::filesystem::exists(driverFile)) << driverFile;
+
+    // Nem o driver nem a libmariadb ficam na memória antes da primeira conexão (CLAUDE.md §2.5).
+    const auto clientLibraryLoaded = [&] {
+        const auto libraries = platform->loadedLibraries();
+        return std::ranges::any_of(libraries, [](const std::filesystem::path& library) {
+            return library.filename().string().find("mariadb") != std::string::npos;
+        });
+    };
+    EXPECT_FALSE(isLoaded(*platform, driverFile));
+    EXPECT_FALSE(clientLibraryLoaded());
+
+    EXPECT_EQ(host.driver("inexistente", directory), nullptr);
+    const auto* entry = host.driver("mysql", directory);
+    ASSERT_NE(entry, nullptr);
+    EXPECT_EQ(entry->displayName, "MySQL / MariaDB");
+    EXPECT_TRUE(isLoaded(*platform, driverFile));
+    EXPECT_EQ(host.driver("mysql", directory), entry); // já registrado: não carrega de novo
+
+    tests::MemoryCredentialStore credentials;
+    core::ConnectionParams params;
+    params.driverId = "mysql";
+    const auto driver = host.drivers().create("mysql");
+    EXPECT_EQ(driver->id(), "mysql");
+    EXPECT_NE(driver->createConnection(params, credentials), nullptr); // cria sem conectar
 }
 
 TEST(ModuleHostTest, DiscoverListsModulesWithoutLoadingThem) {

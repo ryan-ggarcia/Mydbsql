@@ -60,6 +60,13 @@ public:
 
     [[nodiscard]] sdk::DriverRegistry& drivers() override { return m_drivers; }
     [[nodiscard]] sdk::EventBus& events() override { return m_events; }
+    [[nodiscard]] std::filesystem::path currentModuleFile() const override { return m_registeringFile; }
+
+    /// Driver pelo id (ex.: "mysql"). Se ainda não estiver registrado, carrega o módulo "driver.<id>" de
+    /// `moduleDirectory` agora, na primeira conexão (CLAUDE.md §2.2, regra 2). nullptr se não existir ou
+    /// estiver desligado; ModuleLoadError se o arquivo existir mas não carregar.
+    [[nodiscard]] const sdk::DriverRegistry::Entry* driver(std::string_view driverId,
+                                                           const std::filesystem::path& moduleDirectory);
 
 private:
     void registerModule(sdk::IModule& module, const std::filesystem::path& file);
@@ -72,6 +79,7 @@ private:
     sdk::DriverRegistry m_drivers;
     std::vector<LoadedModule> m_modules;
     std::set<std::string, std::less<>> m_disabled;
+    std::filesystem::path m_registeringFile;
 };
 
 } // namespace mydb::app

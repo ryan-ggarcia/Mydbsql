@@ -75,6 +75,28 @@ jobs:
       - run: python tools/ci_step.py -- cmake --build --preset ${{ matrix.preset }}
       - run: python tools/ci_step.py -- ctest --preset ${{ matrix.preset }}
 
+  integration:
+    name: Integração (MySQL 8.4 e MariaDB 11.4)
+    runs-on: ubuntu-24.04
+    env:
+      CC: gcc
+      CXX: g++
+      MYDB_TEST_MYSQL: "host=127.0.0.1;port=3307;user=root;password="
+      MYDB_TEST_MARIADB: "host=127.0.0.1;port=3308;user=root;password="
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose -f tests/docker-compose.yml up -d
+      - uses: ./.github/actions/setup-deps
+        with:
+          qt-host: linux_x64
+          qt-arch: linux_gcc_64
+      - run: python tools/ci_step.py -- cmake --preset debug -DMYDB_BUILD_APP=OFF -DMYDB_BUILD_BENCHMARKS=OFF
+      - run: python tools/ci_step.py -- cmake --build --preset debug
+      - run: python tools/ci_step.py -- docker compose -f tests/docker-compose.yml up -d --wait
+      - run: python tools/ci_step.py -- ctest --preset debug -L integration
+      - if: failure()
+        run: docker compose -f tests/docker-compose.yml logs --tail 50
+
   coverage:
     name: Cobertura (core/sql)
     runs-on: ubuntu-24.04

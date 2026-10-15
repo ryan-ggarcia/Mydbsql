@@ -502,11 +502,14 @@ public:
     virtual std::span<const std::byte> bytes(std::size_t col) const = 0;
 };
 
-struct ExecutionResult {
-    std::vector<std::unique_ptr<IResultSet>> resultSets;   // múltiplos resultados
-    int64_t rowsAffected{-1};
-    uint32_t warnings{};
-    std::chrono::microseconds serverTime{}, networkTime{};
+class IExecution {                      // um resultado por vez, em streaming (ADR-0008)
+public:
+    virtual ~IExecution() = default;
+    virtual bool nextResult() = 0;                          // próxima sentença do lote; false no fim
+    virtual IResultSet* resultSet() = 0;                    // nullptr para INSERT/UPDATE/DDL
+    virtual int64_t rowsAffected() const = 0;
+    virtual uint32_t warnings() const = 0;
+    virtual Timing timing() const = 0;                      // tempo do servidor e de rede
 };
 
 class IConnection {
@@ -515,7 +518,7 @@ public:
     virtual void open() = 0;
     virtual void close() noexcept = 0;
     virtual bool ping(bool reconnect) = 0;
-    virtual ExecutionResult execute(std::string_view sql) = 0;
+    virtual std::unique_ptr<IExecution> execute(std::string_view sql) = 0;
     virtual void cancelCurrent() = 0;                       // thread-safe
     virtual void useDatabase(std::string_view db) = 0;
     virtual ServerInfo serverInfo() const = 0;
@@ -661,13 +664,13 @@ A partir da Fase 1, toda funcionalidade entra como **módulo** (§2.4). Se uma t
 - **Pronto quando:** cobertura ≥ 90% em `core/sql` e um módulo de exemplo (`modules/example_hello`) é carregado dinamicamente sem mudanças fora da pasta dele. *(Concluída em 2026-10-15: CI verde nos 13 jobs, inclusive o de cobertura, que falha abaixo de 90%.)*
 
 ### Fase 2 — Primeiro driver: MySQL/MariaDB
-- [ ] Wrapper RAII para `MYSQL*` e `MYSQL_RES*`.
-- [ ] `MySqlConnection` (open, SSL, compressão, timeout, `CLIENT_MULTI_STATEMENTS`, múltiplos resultados, `affected_rows`, `warning_count`, thread id, cancel via `KILL QUERY`).
-- [ ] `MySqlDialect` (crases, escape, `LIMIT`, tipos de dados MySQL e MariaDB, features por versão).
-- [ ] `MySqlMetadataProvider` via `information_schema` + `SHOW CREATE …`.
-- [ ] Suíte de **testes de contrato** de `IConnection` rodando contra MySQL 8 e MariaDB 11 (docker-compose).
-- [ ] Empacotado como plugin dinâmico `mydb_driver_mysql`; teste confirma que a libmariadb **não** está mapeada antes da primeira conexão.
-- **Pronto quando:** conecta, lista bancos e objetos, executa query e lê resultados nos testes de integração, com o driver carregado sob demanda.
+- [x] Wrapper RAII para `MYSQL*` e `MYSQL_RES*`.
+- [x] `MySqlConnection` (open, SSL, compressão, timeout, `CLIENT_MULTI_STATEMENTS`, múltiplos resultados, `affected_rows`, `warning_count`, thread id, cancel via `KILL QUERY`).
+- [x] `MySqlDialect` (crases, escape, `LIMIT`, tipos de dados MySQL e MariaDB, features por versão).
+- [x] `MySqlMetadataProvider` via `information_schema` + `SHOW CREATE …`.
+- [x] Suíte de **testes de contrato** de `IConnection` rodando contra MySQL 8 e MariaDB 11 (docker-compose).
+- [x] Empacotado como plugin dinâmico `mydb_driver_mysql`; teste confirma que a libmariadb **não** está mapeada antes da primeira conexão.
+- **Pronto quando:** conecta, lista bancos e objetos, executa query e lê resultados nos testes de integração, com o driver carregado sob demanda. *(Local: 22 testes de contrato verdes contra MySQL 8.0.45 e MariaDB 11.4.12; na CI, job `integration` com MySQL 8.4 e MariaDB 11.4 em docker-compose.)*
 
 ### Fase 3 — Sessões, configurações e credenciais
 - [ ] `ISettingsStore` (JSON) com migração por versão de esquema.

@@ -1,11 +1,12 @@
 #pragma once
 
-#include "core/interfaces/ExecutionResult.hpp"
+#include "core/interfaces/IExecution.hpp"
 #include "core/interfaces/IMetadataProvider.hpp"
 #include "core/interfaces/ISqlDialect.hpp"
 #include "core/interfaces/OptionalCapabilities.hpp"
 #include "core/interfaces/ServerInfo.hpp"
 
+#include <memory>
 #include <string_view>
 
 namespace mydb::core {
@@ -22,7 +23,9 @@ public:
     /// Com reconnect, tenta reabrir se a conexão tiver caído. Devolve se a conexão está viva.
     virtual bool ping(bool reconnect) = 0;
 
-    [[nodiscard]] virtual ExecutionResult execute(std::string_view sql) = 0;
+    /// Envia o lote (uma ou mais sentenças) e devolve a execução, posicionada antes do primeiro resultado.
+    /// Lança QueryError se a primeira sentença falhar. Uma execução anterior ainda aberta é descartada.
+    [[nodiscard]] virtual std::unique_ptr<IExecution> execute(std::string_view sql) = 0;
     /// Thread-safe. Interrompe a execução em andamento, que termina com CancelledError.
     virtual void cancelCurrent() = 0;
     virtual void useDatabase(std::string_view database) = 0;

@@ -20,6 +20,7 @@ add_executable(mydb_tests
     unit/core/SqlSplitterTest.cpp
     unit/core/SqlTokenizerTest.cpp
     unit/sdk/SdkTest.cpp
+    unit/drivers/MySqlTextTest.cpp
     unit/infra/DynamicLibraryTest.cpp
     unit/infra/PlatformTest.cpp
     unit/infra/UrlPolicyTest.cpp
@@ -32,17 +33,39 @@ target_link_libraries(mydb_tests PRIVATE
     mydb::sdk
     mydb::platform
     mydb::app_support
+    mydb_driver_mysql_text
     GTest::gtest_main)
+target_include_directories(mydb_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_definitions(mydb_tests PRIVATE
     MYDB_TEST_PLUGIN_PATH="$<TARGET_FILE:mydb_test_plugin>"
     MYDB_EXAMPLE_MODULE_PATH="$<TARGET_FILE:mydb_module_example_hello>"
-    MYDB_BAD_VERSION_MODULE_PATH="$<TARGET_FILE:mydb_module_test_bad_version>")
-add_dependencies(mydb_tests mydb_test_plugin mydb_module_example_hello mydb_module_test_bad_version)
+    MYDB_BAD_VERSION_MODULE_PATH="$<TARGET_FILE:mydb_module_test_bad_version>"
+    MYDB_MYSQL_DRIVER_PATH="$<TARGET_FILE:mydb_driver_mysql>")
+add_dependencies(mydb_tests mydb_test_plugin mydb_module_example_hello mydb_module_test_bad_version mydb_driver_mysql)
 mydb_set_warnings(mydb_tests)
 
 gtest_discover_tests(mydb_tests
     DISCOVERY_MODE PRE_TEST
     PROPERTIES LABELS unit)
+
+add_executable(mydb_contract_tests
+    contract/MySqlContractTest.cpp
+)
+target_link_libraries(mydb_contract_tests PRIVATE
+    mydb_driver_mysql_impl
+    GTest::gtest_main)
+target_include_directories(mydb_contract_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_definitions(mydb_contract_tests PRIVATE
+    MYDB_MARIADB_PLUGIN_DIR="${MYDB_MODULE_OUTPUT_DIR}/mariadb-plugins")
+add_dependencies(mydb_contract_tests mydb_driver_mysql)
+mydb_set_warnings(mydb_contract_tests)
+if(MSVC)
+    target_compile_definitions(mydb_contract_tests PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+
+gtest_discover_tests(mydb_contract_tests
+    DISCOVERY_MODE PRE_TEST
+    PROPERTIES LABELS integration)
 
 if(Python3_Interpreter_FOUND)
     add_test(NAME lint.platform_ifdefs

@@ -88,12 +88,30 @@ void ModuleHost::registerModule(sdk::IModule& module, const std::filesystem::pat
     if (std::ranges::find(m_modules, id, &LoadedModule::id) != m_modules.end()) {
         throw ModuleLoadError("Módulo carregado duas vezes: " + id);
     }
+    m_registeringFile = file;
     try {
         module.registerInto(*this);
     } catch (const std::exception& error) {
+        m_registeringFile.clear();
         throw ModuleLoadError("O módulo " + id + " falhou ao se registrar: " + error.what());
     }
+    m_registeringFile.clear();
     m_modules.push_back(LoadedModule{.id = id, .apiVersion = module.apiVersion(), .file = file});
+}
+
+const sdk::DriverRegistry::Entry* ModuleHost::driver(std::string_view driverId,
+                                                     const std::filesystem::path& moduleDirectory) {
+    if (const auto* entry = m_drivers.find(driverId); entry != nullptr) {
+        return entry;
+    }
+    const std::string moduleId = "driver." + std::string(driverId);
+    const std::filesystem::path file =
+        moduleDirectory / (sdk::moduleFileStem(moduleId) + std::string(m_platform.sharedLibrarySuffix()));
+    std::error_code error;
+    if (!std::filesystem::is_regular_file(file, error) || !loadDynamic(file)) {
+        return nullptr;
+    }
+    return m_drivers.find(driverId);
 }
 
 bool ModuleHost::isDisabledStem(std::string_view stem) const {
