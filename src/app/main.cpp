@@ -63,6 +63,8 @@ int run(int argc, char** argv, std::chrono::steady_clock::time_point startedAt) 
 
     // No Windows, o motor de fontes GDI abre a primeira janela em metade do tempo do DirectWrite
     // (ADR-0010). Quem definir QT_QPA_PLATFORM ou passar -platform continua mandando.
+    // O valor vem do CMake e é vazio fora do Windows.
+    // NOLINTNEXTLINE(readability-redundant-string-init)
     constexpr std::string_view kDefaultPlatform = MYDB_DEFAULT_QPA_PLATFORM;
     if (!kDefaultPlatform.empty() && qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
         qputenv("QT_QPA_PLATFORM",

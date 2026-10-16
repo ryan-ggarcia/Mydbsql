@@ -16,33 +16,34 @@ namespace mydb::infra::platform {
 namespace {
 
 // Tipos mínimos da GLib e da libsecret (ABI estável e documentada), para não exigir os headers no build.
-using gboolean = int;
-using gchar = char;
-using gint = int;
-using gpointer = void*;
+using GBoolean = int;
+using GChar = char;
+using GInt = int;
+using GPointer = void*;
 struct GError {
     std::uint32_t domain;
-    gint code;
-    gchar* message;
+    GInt code;
+    GChar* message;
 };
-enum SecretSchemaAttributeType : int { kSecretAttributeString = 0 };
-enum SecretSchemaFlags : int { kSecretSchemaNone = 0 };
+// O tamanho (int) faz parte da ABI da libsecret: não dá para usar um tipo menor.
+enum class SecretSchemaAttributeType : int { String = 0 }; // NOLINT(performance-enum-size)
+enum class SecretSchemaFlags : int { None = 0 };           // NOLINT(performance-enum-size)
 struct SecretSchemaAttribute {
-    const gchar* name;
+    const GChar* name;
     SecretSchemaAttributeType type;
 };
 struct SecretSchema {
-    const gchar* name;
+    const GChar* name;
     SecretSchemaFlags flags;
     std::array<SecretSchemaAttribute, 32> attributes; // NOLINT(readability-magic-numbers): tamanho da ABI
-    gint reserved;
-    std::array<gpointer, 7> reservedPointers; // NOLINT(readability-magic-numbers): tamanho da ABI
+    GInt reserved;
+    std::array<GPointer, 7> reservedPointers; // NOLINT(readability-magic-numbers): tamanho da ABI
 };
 
-using StoreFn = gboolean(const SecretSchema*, const gchar*, const gchar*, const gchar*, void*, GError**, ...);
-using LookupFn = gchar*(const SecretSchema*, void*, GError**, ...);
-using ClearFn = gboolean(const SecretSchema*, void*, GError**, ...);
-using FreeFn = void(gchar*);
+using StoreFn = GBoolean(const SecretSchema*, const GChar*, const GChar*, const GChar*, void*, GError**, ...);
+using LookupFn = GChar*(const SecretSchema*, void*, GError**, ...);
+using ClearFn = GBoolean(const SecretSchema*, void*, GError**, ...);
+using FreeFn = void(GChar*);
 using ErrorFreeFn = void(GError*);
 
 constexpr const char* kAttribute = "key";
@@ -50,8 +51,8 @@ constexpr const char* kAttribute = "key";
 SecretSchema makeSchema() {
     SecretSchema schema{};
     schema.name = "org.mydbsql.Credential";
-    schema.flags = kSecretSchemaNone;
-    schema.attributes[0] = SecretSchemaAttribute{.name = kAttribute, .type = kSecretAttributeString};
+    schema.flags = SecretSchemaFlags::None;
+    schema.attributes[0] = SecretSchemaAttribute{.name = kAttribute, .type = SecretSchemaAttributeType::String};
     return schema;
 }
 
@@ -74,7 +75,7 @@ public:
     [[nodiscard]] std::optional<std::string> read(std::string_view key) override {
         const std::string k(key);
         GError* error = nullptr;
-        gchar* secret = m_lookup(&m_schema, nullptr, &error, kAttribute, k.c_str(), nullptr);
+        GChar* secret = m_lookup(&m_schema, nullptr, &error, kAttribute, k.c_str(), nullptr);
         check(error, "leitura");
         if (secret == nullptr) {
             return std::nullopt;
