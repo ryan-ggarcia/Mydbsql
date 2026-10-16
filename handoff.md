@@ -152,6 +152,12 @@ Os detalhes estão no `CLAUDE.md` §1. Resumo:
    - O `CMakeUserPresets.json` local (não versionado) tem os presets `win-debug` e `win-release` com os caminhos desta máquina.
 7. **[Sugestão] Triplet estático no Windows** (`x64-windows-static-md`): eliminaria `spdlog.dll`, `fmt.dll`, `gtest*.dll` e `benchmark*.dll` e reduziria os módulos carregados na inicialização. Não foi feito para não divergir da CI sem medir.
 8. **Falta:** push e CI verde do `3f6e91a` em diante. A CI do `0a4ddc2` já passou em todos os builds, na integração (MySQL 8.4 e MariaDB 11.4) e nos testes de UI; faltavam o clang-tidy (corrigido) e o orçamento, que agora usa as metas da §2.1 com baselines da CI (decisão de 2026-10-16). Pendências dentro do plano: `localTimeZone` e `keepAlive` (Fase 4), SRID das colunas espaciais, túnel SSH (Fase 11). **Depois: Fase 4** (janela principal e navegação).
+9. **2026-10-16: macOS adiado** (decisão do usuário, ADR-0011). Linux e Windows bloqueiam a CI; os jobs do macOS rodam com `continue-on-error`. Pendências para a etapa final de portabilidade:
+   - cofre Keychain (`MacCredentialStore`) só exercitado na CI, nunca testado num Mac;
+   - metas de início e memória provisórias (§2.1); medir num Mac real e fixar `bench/baseline/macos.json`;
+   - benchmarks informativos no macOS (`benchmarksInformative`), por causa da variação de 2× no runner;
+   - build universal (arm64 + x86-64) e `.dmg` assinado e notarizado (Fase 12);
+   - voltar a tornar os jobs do macOS obrigatórios no `ci.yml`.
 
 ---
 
@@ -165,7 +171,7 @@ Os detalhes estão no `CLAUDE.md` §1. Resumo:
 | libssh2 embutido em vez de ssh/plink externos | §2.6, §3 | Por portabilidade e segurança |
 | Arquitetura em camadas (`core`, `sdk`, `drivers`, `modules`, `infra`, `services`, `ui`, `app`) e registries de módulos | §2.4, §4 | Extensibilidade |
 | Orçamento de desempenho (≤ 60 MB RSS, ≤ 300 ms de inicialização, …) | §2.1 | Metas escolhidas pelo assistente a partir das medições do HeidiSQL; ajustáveis |
-| Linux, Windows e macOS obrigatórios; código de SO só em `src/infra/platform/` | §0, §2.6 | Pedido do usuário |
+| Linux, Windows e macOS obrigatórios; código de SO só em `src/infra/platform/` | §0, §2.6 | Pedido do usuário. Desde 2026-10-16, o macOS não bloqueia até a etapa final de portabilidade (ADR-0011) |
 | MVP = Fases 0 a 6 com MySQL/MariaDB | §5 | — |
 | Qt 6.11.3 pelos binários oficiais (`tools/fetch_qt.py`); vcpkg para o resto | ADR-0006, `CLAUDE.md` §3 | Usuário escolheu "binários prontos" em 2026-10-14; compilar o Qt pelo vcpkg era inviável nesta máquina |
 | MSVC v145 (VS 2026) aceito ao lado do v143 | `CLAUDE.md` §2.6 | É o que existe na máquina Windows; ABI compatível com os binários do Qt para MSVC 2022 |

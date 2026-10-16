@@ -29,6 +29,7 @@ jobs:
   build-test:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.optional == true }}
     strategy:
       fail-fast: false
       matrix:
@@ -37,7 +38,7 @@ jobs:
           - { name: Linux x86-64 Clang, os: ubuntu-22.04,     qt-host: linux_x64,   qt-arch: linux_gcc_64,      cc: clang-15, cxx: clang++-15 }
           - { name: Linux ARM64 GCC,    os: ubuntu-24.04-arm, qt-host: linux_arm64, qt-arch: linux_gcc_arm64,   cc: gcc,      cxx: g++ }
           - { name: Windows MSVC,       os: windows-latest,   qt-host: windows_x86, qt-arch: win64_msvc2022_64, cc: cl,       cxx: cl }
-          - { name: macOS arm64,        os: macos-latest,     qt-host: mac_x64,     qt-arch: clang_64,          cc: clang,    cxx: clang++ }
+          - { name: macOS arm64,        os: macos-latest,     qt-host: mac_x64,     qt-arch: clang_64,          cc: clang,    cxx: clang++, optional: true }
     env:
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}
@@ -135,13 +136,14 @@ jobs:
   startup-budget:
     name: Orçamento (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.optional == true }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - { name: linux,   os: ubuntu-22.04,   qt-host: linux_x64,   qt-arch: linux_gcc_64,      cc: gcc-12, cxx: g++-12 }
           - { name: windows, os: windows-latest, qt-host: windows_x86, qt-arch: win64_msvc2022_64, cc: cl,     cxx: cl }
-          - { name: macos,   os: macos-latest,   qt-host: mac_x64,     qt-arch: clang_64,          cc: clang,  cxx: clang++ }
+          - { name: macos,   os: macos-latest,   qt-host: mac_x64,     qt-arch: clang_64,          cc: clang,  cxx: clang++, optional: true }
     env:
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}

@@ -25,7 +25,7 @@ Este arquivo é a fonte de verdade para quem trabalhar no repositório (humanos 
 
 - **Reimplementação limpa (clean-room).** O HeidiSQL é GPL-2.0. Usamos o HeidiSQL só como referência de *comportamento e funcionalidades*. **Nunca** copie nem traduza código Pascal, arquivos `.lfm`, ícones (os ícones Icons8 do HeidiSQL têm licença exclusiva) ou textos de tradução. Os arquivos `functions-*.ini` do HeidiSQL também não devem ser copiados: o catálogo de funções SQL deve ser gerado a partir da documentação oficial de cada SGBD.
 - **C++20**, sem extensões de compilador. O código compila sem warnings com `-Wall -Wextra -Wpedantic -Werror` (GCC/Clang) e `/W4 /WX` (MSVC).
-- **Compatível com Linux, Windows e macOS desde o primeiro commit.** Todo PR precisa compilar e passar nos testes nas três plataformas (CI). Código específico de SO (`#ifdef _WIN32`, `__linux__`, `__APPLE__`) só pode existir dentro de `src/infra/platform/` (§2.6).
+- **Compatível com Linux, Windows e macOS desde o primeiro commit.** Todo PR precisa compilar e passar nos testes nas três plataformas (CI). *Até o fim da Fase 13, só Linux e Windows bloqueiam; o macOS roda na CI sem bloquear e o que faltar nele fica para uma etapa final de portabilidade (ADR-0011).* Código específico de SO (`#ifdef _WIN32`, `__linux__`, `__APPLE__`) só pode existir dentro de `src/infra/platform/` (§2.6).
 - **Nada de lógica de banco na camada de UI.** A UI só conversa com *services* e *interfaces* (veja §4).
 - **RAII em tudo.** Nada de `new`/`delete` soltos. Use `std::unique_ptr` por padrão e `std::shared_ptr` só quando a posse for realmente compartilhada. Handles de C (MYSQL*, PGconn*, sqlite3*) ficam encapsulados em wrappers com deleter próprio.
 - **Toda funcionalidade nova vem com testes** (unitários no core; de integração nos drivers, contra containers).
@@ -412,7 +412,7 @@ Outros sistemas (FreeBSD, por exemplo) são "melhor esforço": devem compilar se
 **CI (GitHub Actions), em todo PR:**
 - `ubuntu-22.04` (GCC e Clang, x86-64) + `ubuntu-24.04-arm` (ARM64); testes de UI com `QT_QPA_PLATFORM=offscreen`.
 - `windows-latest` (MSVC, x86-64).
-- `macos-latest` (arm64) + build universal no job de release.
+- `macos-latest` (arm64) + build universal no job de release. Até o fim do plano, os jobs do macOS não bloqueiam (`continue-on-error`, ADR-0011).
 - Testes de integração com bancos (docker-compose) rodam no Linux. No Windows e no macOS rodam os testes unitários, os de contrato com SQLite e os de UI.
 - `--measure-startup` e os benchmarks rodam nas três plataformas, cada uma com sua `baseline.json`.
 
@@ -638,7 +638,7 @@ Mydbsql/
 
 ## 5. Plano de implementação
 
-Cada fase termina com **build verde em CI nas 3 plataformas, testes passando, orçamento da §2.1 respeitado e um incremento utilizável**. Marque os itens concluídos (`[x]`) neste arquivo.
+Cada fase termina com **build verde em CI no Linux e no Windows (o macOS não bloqueia até a etapa final de portabilidade, ADR-0011), testes passando, orçamento da §2.1 respeitado e um incremento utilizável**. Marque os itens concluídos (`[x]`) neste arquivo.
 
 A partir da Fase 1, toda funcionalidade entra como **módulo** (§2.4). Se uma tarefa exigir editar `MainWindow` ou outro módulo para funcionar, falta um ponto de extensão: crie-o primeiro.
 
