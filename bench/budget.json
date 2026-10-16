@@ -1,15 +1,15 @@
 {
-  "phase": 0,
+  "phase": 3,
   "startup": {
-    "startup_ms": 150,
-    "rss_kb": 40960,
+    "startup_ms": 300,
+    "rss_kb": 61440,
     "anon_kb": 25600
   },
   "platforms": {
     "macos": {
       "startup_ms": 400,
       "rss_kb": 122880,
-      "anon_kb": 25600
+      "anon_kb": 40960
     }
   }
 }

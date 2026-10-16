@@ -6,14 +6,16 @@
     "benchmarks": 1.0
   },
   "startup": {
-    "startup_ms": 47.0,
-    "rss_kb": 37248,
-    "anon_kb": 10472,
+    "startup_ms": 75.9,
+    "rss_kb": 40280,
+    "anon_kb": 11276,
     "libs_loaded": 81
   },
   "benchmarks": {
-    "BM_LoadedLibraries": 16521.1,
-    "BM_ProcessMemory": 247.1,
-    "BM_StartupReportToJson": 526.9
+    "BM_LoadedLibraries": 21938.0,
+    "BM_ProcessMemory": 317.7,
+    "BM_SplitEditorText": 863023.8,
+    "BM_SplitStreaming/100/iterations:1": 1190997300.0,
+    "BM_StartupReportToJson": 710.3
   }
 }

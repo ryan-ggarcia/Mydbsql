@@ -151,7 +151,7 @@ Os detalhes estão no `CLAUDE.md` §1. Resumo:
    - **O usuário faz o push.** O agente commita localmente e acompanha a CI depois.
    - O `CMakeUserPresets.json` local (não versionado) tem os presets `win-debug` e `win-release` com os caminhos desta máquina.
 7. **[Sugestão] Triplet estático no Windows** (`x64-windows-static-md`): eliminaria `spdlog.dll`, `fmt.dll`, `gtest*.dll` e `benchmark*.dll` e reduziria os módulos carregados na inicialização. Não foi feito para não divergir da CI sem medir.
-8. **Falta:** push e CI verde das Fases 2 e 3 (jobs `integration` e de UI novos; cofre do macOS só é exercitado na CI). Regenerar `bench/baseline/*.json` com as anotações "Medição" da CI, porque a primeira janela mudou. Pendências dentro do plano: `localTimeZone` e `keepAlive` (Fase 4), SRID das colunas espaciais, túnel SSH (Fase 11). **Depois: Fase 4** (janela principal e navegação).
+8. **Falta:** push e CI verde do `3f6e91a` em diante. A CI do `0a4ddc2` já passou em todos os builds, na integração (MySQL 8.4 e MariaDB 11.4) e nos testes de UI; faltavam o clang-tidy (corrigido) e o orçamento, que agora usa as metas da §2.1 com baselines da CI (decisão de 2026-10-16). Pendências dentro do plano: `localTimeZone` e `keepAlive` (Fase 4), SRID das colunas espaciais, túnel SSH (Fase 11). **Depois: Fase 4** (janela principal e navegação).
 
 ---
 

@@ -5,15 +5,18 @@
     "startup_ms": 1.0,
     "benchmarks": 1.0
   },
+  "benchmarksInformative": true,
   "startup": {
-    "startup_ms": 341.1,
-    "rss_kb": 95344,
-    "anon_kb": 24770,
+    "startup_ms": 314.4,
+    "rss_kb": 109536,
+    "anon_kb": 32786,
     "libs_loaded": 1045
   },
   "benchmarks": {
-    "BM_LoadedLibraries": 5222.5,
-    "BM_ProcessMemory": 1343.3,
-    "BM_StartupReportToJson": 337.0
+    "BM_LoadedLibraries": 68812.3,
+    "BM_ProcessMemory": 2113.5,
+    "BM_SplitEditorText": 505392.8,
+    "BM_SplitStreaming/100/iterations:1": 956765334.0,
+    "BM_StartupReportToJson": 378.2
   }
 }

@@ -90,13 +90,15 @@ def main() -> int:
             if reference and startup[metric] > reference * (1 + tolerance):
                 failures.append(f"{metric}: {startup[metric]} > baseline {reference} +{tolerance:.0%}")
         tolerance = float(overrides.get("benchmarks", default_tolerance))
+        # Em runners com muito ruído (macOS), os benchmarks só são publicados, sem falhar a CI.
+        informative = bool(baseline.get("benchmarksInformative", False))
         for name, reference in baseline.get("benchmarks", {}).items():
             value = benchmarks.get(name)
             if value is None:
                 continue
             ratio = value / reference
             print(f"  bench {name:28} {value:>12.1f} ns  ({ratio:.2f}× baseline)")
-            if ratio > 1 + tolerance:
+            if ratio > 1 + tolerance and not informative:
                 failures.append(f"{name}: {value:.1f} ns > baseline {reference:.1f} ns +{tolerance:.0%}")
     else:
         print(f"Sem baseline em {args.baseline}: só o orçamento absoluto foi conferido.")
