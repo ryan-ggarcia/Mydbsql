@@ -59,6 +59,7 @@ public:
     [[nodiscard]] const std::vector<LoadedModule>& modules() const noexcept { return m_modules; }
 
     [[nodiscard]] sdk::DriverRegistry& drivers() override { return m_drivers; }
+    [[nodiscard]] sdk::CommandRegistry& commands() override { return m_commands; }
     [[nodiscard]] sdk::EventBus& events() override { return m_events; }
     [[nodiscard]] std::filesystem::path currentModuleFile() const override { return m_registeringFile; }
 
@@ -77,6 +78,7 @@ private:
     std::vector<infra::platform::DynamicLibrary> m_libraries;
     sdk::EventBus m_events;
     sdk::DriverRegistry m_drivers;
+    sdk::CommandRegistry m_commands;
     std::vector<LoadedModule> m_modules;
     std::set<std::string, std::less<>> m_disabled;
     std::filesystem::path m_registeringFile;

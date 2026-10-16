@@ -1,1 +1,2 @@
 add_subdirectory(example_hello)
+add_subdirectory(workbench)

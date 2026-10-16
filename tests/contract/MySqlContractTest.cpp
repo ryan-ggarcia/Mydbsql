@@ -9,6 +9,7 @@
 #include "core/model/LocalTime.hpp"
 #include "drivers/mysql/MySqlDriver.hpp"
 #include "infra/credentials/MemoryCredentialStore.hpp"
+#include "support/TestServers.hpp"
 
 #include <gtest/gtest.h>
 
@@ -32,27 +33,6 @@ using core::model::ObjectRef;
 using core::model::ObjectType;
 
 constexpr std::string_view kDatabase = "mydb_contract";
-
-std::optional<std::map<std::string, std::string, std::less<>>> serverFromEnvironment(const char* variable) {
-    const char* raw = std::getenv(variable); // NOLINT(concurrency-mt-unsafe): lido antes de qualquer thread
-    if (raw == nullptr || *raw == '\0') {
-        return std::nullopt;
-    }
-    std::map<std::string, std::string, std::less<>> values;
-    std::string_view text(raw);
-    while (!text.empty()) {
-        const std::size_t end = text.find(';');
-        const std::string_view item = text.substr(0, end);
-        if (const std::size_t equals = item.find('='); equals != std::string_view::npos) {
-            values[std::string(item.substr(0, equals))] = std::string(item.substr(equals + 1));
-        }
-        if (end == std::string_view::npos) {
-            break;
-        }
-        text.remove_prefix(end + 1);
-    }
-    return values;
-}
 
 /// Executa e descarta todos os resultados.
 void run(core::IConnection& connection, std::string_view sql) {
@@ -89,7 +69,7 @@ std::string scalar(core::IConnection& connection, std::string_view sql) {
 class MySqlContractTest : public ::testing::TestWithParam<const char*> {
 protected:
     void SetUp() override {
-        const auto server = serverFromEnvironment(GetParam());
+        const auto server = tests::serverFromEnvironment(GetParam());
         if (!server) {
             GTEST_SKIP() << GetParam() << " não definida; servidor ausente";
         }

@@ -1,6 +1,6 @@
 #include "ui/dialogs/SessionManagerDialog.hpp"
 
-#include "core/errors/DbError.hpp"
+#include "ui/common/ErrorText.hpp"
 #include "ui/common/QtText.hpp"
 
 #include <QCheckBox>
@@ -60,14 +60,6 @@ constexpr std::array<SslModeItem, 5> kSslModes{{
     {.label = QT_TRANSLATE_NOOP("SessionManagerDialog", "Verificar a CA e o nome do host"),
      .mode = core::SslOptions::Mode::VerifyIdentity},
 }};
-
-QString errorText(const std::exception& error) {
-    QString text = QString::fromUtf8(error.what());
-    if (const auto* db = dynamic_cast<const core::DbError*>(&error); db != nullptr && !db->hint().empty()) {
-        text += QStringLiteral("\n\n") + toQt(db->hint());
-    }
-    return text;
-}
 
 QIcon colorIcon(const QString& color) {
     QPixmap pixmap(kIconSize, kIconSize);

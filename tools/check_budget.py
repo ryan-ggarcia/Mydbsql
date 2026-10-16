@@ -3,8 +3,10 @@
 
 Entradas:
   --startup run1.json run2.json run3.json   saídas de `mydbsql --measure-startup=<arquivo>` (usa a mediana)
-  --benchmarks bench.json                   saída de `mydb_bench --benchmark_out=<arquivo> --benchmark_out_format=json`
-  --budget bench/budget.json                limites absolutos da fase atual ("platforms" sobrepõe por SO)
+  --benchmarks bench.json [ui.json …]       saídas de `mydb_bench`/`mydb_ui_bench --benchmark_out=<arquivo>
+                                            --benchmark_out_format=json`
+  --budget bench/budget.json                limites absolutos da fase atual ("platforms" sobrepõe por SO;
+                                            "benchmarks_ms" limita benchmarks pelo nome)
   --baseline bench/baseline/<plataforma>.json   valores de referência; regressão > tolerância falha
 
 Sem baseline (primeira execução numa plataforma), só os limites absolutos valem e o script imprime
@@ -58,14 +60,16 @@ def main() -> int:
         stream.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--startup", nargs="+", type=Path, required=True)
-    parser.add_argument("--benchmarks", type=Path)
+    parser.add_argument("--benchmarks", nargs="+", type=Path, default=[])
     parser.add_argument("--budget", type=Path, required=True)
     parser.add_argument("--baseline", type=Path, required=True)
     parser.add_argument("--write-baseline", action="store_true")
     args = parser.parse_args()
 
     startup = median_startup(args.startup)
-    benchmarks = benchmark_times(args.benchmarks) if args.benchmarks else {}
+    benchmarks: dict[str, float] = {}
+    for path in args.benchmarks:
+        benchmarks.update(benchmark_times(path))
     budget = load(args.budget)
     failures: list[str] = []
 
@@ -79,6 +83,18 @@ def main() -> int:
             status = f"ESTOUROU o orçamento ({limit})"
             failures.append(f"{metric}={value} > orçamento {limit}")
         print(f"  {metric:12} {value:>10} {status}")
+
+    # Limites absolutos de benchmarks (ex.: árvore com 10 mil tabelas, §2.1), em milissegundos.
+    for name, limit_ms in budget.get("benchmarks_ms", {}).items():
+        value = benchmarks.get(name)
+        if value is None:
+            failures.append(f"{name}: benchmark com limite no orçamento não foi executado")
+            continue
+        value_ms = value / 1e6
+        status = "ok" if value_ms <= limit_ms else f"ESTOUROU o orçamento ({limit_ms} ms)"
+        if value_ms > limit_ms:
+            failures.append(f"{name}={value_ms:.1f} ms > orçamento {limit_ms} ms")
+        print(f"  bench {name:28} {value_ms:>10.2f} ms {status}")
 
     if args.baseline.exists():
         baseline = load(args.baseline)

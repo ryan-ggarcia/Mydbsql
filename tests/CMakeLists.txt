@@ -64,6 +64,7 @@ gtest_discover_tests(mydb_tests
 
 add_executable(mydb_contract_tests
     contract/MySqlContractTest.cpp
+    contract/MySqlScaleTest.cpp
     contract/SessionEndToEndTest.cpp
 )
 target_link_libraries(mydb_contract_tests PRIVATE
@@ -106,6 +107,18 @@ if(MYDB_BUILD_APP)
     mydb_set_warnings(mydb_ui_tests)
     add_test(NAME ui.session_manager COMMAND mydb_ui_tests -platform offscreen)
     set_tests_properties(ui.session_manager PROPERTIES
+        LABELS ui
+        TIMEOUT 120
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
+    add_executable(mydb_ui_main_window_tests ui/MainWindowTest.cpp)
+    set_target_properties(mydb_ui_main_window_tests PROPERTIES AUTOMOC ON)
+    target_link_libraries(mydb_ui_main_window_tests PRIVATE mydb::ui mydb::app_support mydb::settings Qt6::Test)
+    target_include_directories(mydb_ui_main_window_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_compile_definitions(mydb_ui_main_window_tests PRIVATE QT_NO_KEYWORDS)
+    mydb_set_warnings(mydb_ui_main_window_tests)
+    add_test(NAME ui.main_window COMMAND mydb_ui_main_window_tests -platform offscreen)
+    set_tests_properties(ui.main_window PROPERTIES
         LABELS ui
         TIMEOUT 120
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")

@@ -1,11 +1,12 @@
 add_library(mydb_app_support STATIC
+    BuiltinModules.cpp
     CommandLine.cpp
     ModuleDriverCatalog.cpp
     ModuleHost.cpp
     StartupReport.cpp
 )
 add_library(mydb::app_support ALIAS mydb_app_support)
-target_link_libraries(mydb_app_support PUBLIC mydb::core mydb::sdk mydb::platform)
+target_link_libraries(mydb_app_support PUBLIC mydb::core mydb::sdk mydb::platform PRIVATE mydb_module_workbench)
 mydb_set_warnings(mydb_app_support)
 
 if(NOT MYDB_BUILD_APP)

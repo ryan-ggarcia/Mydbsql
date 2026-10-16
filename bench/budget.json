@@ -1,9 +1,13 @@
 {
-  "phase": 3,
+  "phase": 4,
   "startup": {
     "startup_ms": 300,
     "rss_kb": 61440,
     "anon_kb": 25600
+  },
+  "benchmarks_ms": {
+    "BM_ObjectTreeLoad10k": 100,
+    "BM_ObjectTreeFilter10k": 50
   },
   "platforms": {
     "macos": {

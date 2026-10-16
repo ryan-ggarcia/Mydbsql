@@ -84,6 +84,7 @@ jobs:
       CXX: g++
       MYDB_TEST_MYSQL: "host=127.0.0.1;port=3307;user=root;password="
       MYDB_TEST_MARIADB: "host=127.0.0.1;port=3308;user=root;password="
+      MYDB_TEST_SCALE: "1"
     steps:
       - uses: actions/checkout@v4
       - run: docker compose -f tests/docker-compose.yml up -d
@@ -91,10 +92,10 @@ jobs:
         with:
           qt-host: linux_x64
           qt-arch: linux_gcc_64
-      - run: python tools/ci_step.py -- cmake --preset debug -DMYDB_BUILD_APP=OFF -DMYDB_BUILD_BENCHMARKS=OFF
-      - run: python tools/ci_step.py -- cmake --build --preset debug
+      - run: python tools/ci_step.py -- cmake --preset release -DMYDB_BUILD_APP=OFF -DMYDB_BUILD_BENCHMARKS=OFF
+      - run: python tools/ci_step.py -- cmake --build --preset release
       - run: python tools/ci_step.py -- docker compose -f tests/docker-compose.yml up -d --wait
-      - run: python tools/ci_step.py -- ctest --preset debug -L integration
+      - run: python tools/ci_step.py -- ctest --preset release -L integration
       - if: failure()
         run: docker compose -f tests/docker-compose.yml logs --tail 50
 
@@ -165,12 +166,14 @@ jobs:
           for i in 1 2 3; do run python tools/ci_step.py -- "$exe" "--measure-startup=startup-$i.json"; cat "startup-$i.json"; done
       - name: Benchmarks
         shell: bash
-        run: python tools/ci_step.py -- build/release/bench/mydb_bench --benchmark_out=bench-results.json --benchmark_out_format=json
+        run: |
+          python tools/ci_step.py -- build/release/bench/mydb_bench --benchmark_out=bench-results.json --benchmark_out_format=json
+          python tools/ci_step.py -- build/release/bench/mydb_ui_bench --benchmark_out=bench-ui.json --benchmark_out_format=json
       - name: Comparar com o orçamento e o baseline
         shell: bash
         run: |
           python tools/ci_step.py -- python tools/check_budget.py --startup startup-1.json startup-2.json startup-3.json \
-            --benchmarks bench-results.json --budget bench/budget.json \
+            --benchmarks bench-results.json bench-ui.json --budget bench/budget.json \
             --baseline "bench/baseline/${{ matrix.name }}.json"
       - uses: actions/upload-artifact@v4
         if: always()
@@ -179,3 +182,4 @@ jobs:
           path: |
             startup-*.json
             bench-results.json
+            bench-ui.json

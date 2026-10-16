@@ -1,6 +1,7 @@
 // Raiz de composição (CLAUDE.md §4.3, D): o único lugar que conhece as implementações concretas.
 
 #include "app/Application.hpp"
+#include "app/BuiltinModules.hpp"
 #include "app/CommandLine.hpp"
 #include "app/ModuleDriverCatalog.hpp"
 #include "app/ModuleHost.hpp"
@@ -10,13 +11,18 @@
 #include "infra/platform/IPlatform.hpp"
 #include "infra/platform/SystemCredentialStore.hpp"
 #include "infra/settings/JsonSettingsStore.hpp"
+#include "services/log/LogBuffer.hpp"
+#include "services/session/FavoritesStore.hpp"
 #include "services/session/SessionConnector.hpp"
 #include "services/session/SessionRepository.hpp"
+#include "services/session/SessionService.hpp"
+#include "ui/common/QtDispatcher.hpp"
 #include "ui/common/QtText.hpp"
 #include "ui/dialogs/SessionManagerDialog.hpp"
 #include "ui/main/MainWindow.hpp"
 
 #include <QMessageBox>
+#include <QObject>
 
 #include <spdlog/spdlog.h>
 
@@ -24,6 +30,7 @@
 #include <cstdio>
 #include <exception>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <string_view>
 #include <system_error>
@@ -83,11 +90,19 @@ int run(int argc, char** argv, std::chrono::steady_clock::time_point startedAt) 
             credentials = std::make_unique<mydb::infra::credentials::MemoryCredentialStore>();
         }
 
-        // Ordem de destruição (inversa): janela e conexões antes do conector, do catálogo e dos módulos.
+        // Ordem de destruição (inversa): janela, sessões abertas, conector, catálogo e, por último, os módulos
+        // (o código das fábricas e o EventBus moram neles). O contexto do dispatcher vive mais que as sessões,
+        // porque os workers delas entregam resultados por ele.
         mydb::app::ModuleHost modules(*os);
+        mydb::app::registerBuiltinModules(modules);
         mydb::app::ModuleDriverCatalog drivers(modules, os->pluginDirectory());
         session::SessionRepository repository(settings, *credentials);
         session::SessionConnector connector(drivers, *credentials);
+        session::FavoritesStore favorites(settings);
+        mydb::services::log::LogBuffer log;
+        QObject dispatchContext;
+        const mydb::services::Dispatcher dispatcher = mydb::ui::qtDispatcher(&dispatchContext);
+        session::SessionService sessions(modules.events(), dispatcher, log);
         std::unique_ptr<mydb::ui::MainWindow> mainWindow;
 
         std::string loadError;
@@ -96,15 +111,43 @@ int run(int argc, char** argv, std::chrono::steady_clock::time_point startedAt) 
         } catch (const session::SettingsError& error) {
             loadError = error.what();
         }
+        try {
+            favorites.load();
+        } catch (const session::SettingsError& error) {
+            spdlog::warn("Favoritos ignorados: {}", error.what());
+        }
+
+        std::function<void()> showSessionManager;
+        const mydb::ui::SessionManagerDialog::ConnectedHandler onConnected =
+            [&](const session::Session& opened, std::unique_ptr<mydb::core::IConnection> connection) {
+                if (!mainWindow) {
+                    mainWindow = std::make_unique<mydb::ui::MainWindow>(
+                        mydb::ui::MainWindow::Dependencies{.sessions = &sessions,
+                                                           .favorites = &favorites,
+                                                           .log = &log,
+                                                           .events = &modules.events(),
+                                                           .commands = &modules.commands(),
+                                                           .dispatcher = dispatcher,
+                                                           .showSessionManager = showSessionManager,
+                                                           .version = QStringLiteral(MYDB_VERSION)});
+                    mainWindow->show();
+                }
+                // Uma sessão já aberta não abre de novo: a conexão nova é fechada e a existente, selecionada.
+                (void)sessions.add(opened, std::move(connection));
+                mainWindow->selectSession(opened.id);
+                mainWindow->activateWindow();
+            };
+        // Outras conexões: o gerenciador abre de novo, modal sobre a janela principal, e é destruído ao fechar.
+        showSessionManager = [&] {
+            mydb::ui::SessionManagerDialog dialog(repository, connector, drivers.availableDrivers(),
+                                                  credentials->persistent(), mainWindow.get());
+            dialog.setConnectedHandler(onConnected);
+            dialog.exec();
+        };
 
         mydb::ui::SessionManagerDialog manager(repository, connector, drivers.availableDrivers(),
                                                credentials->persistent());
-        manager.setConnectedHandler(
-            [&mainWindow](const session::Session& opened, std::unique_ptr<mydb::core::IConnection> connection) {
-                mainWindow = std::make_unique<mydb::ui::MainWindow>();
-                mainWindow->attachConnection(std::move(connection), mydb::ui::toQt(opened.name));
-                mainWindow->show();
-            });
+        manager.setConnectedHandler(onConnected);
 
         std::unique_ptr<mydb::app::StartupProbe> probe;
         if (options.measureStartup) {

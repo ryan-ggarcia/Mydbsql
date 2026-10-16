@@ -10,6 +10,7 @@
 #include "infra/settings/JsonSettingsStore.hpp"
 #include "services/session/SessionConnector.hpp"
 #include "services/session/SessionRepository.hpp"
+#include "support/TestServers.hpp"
 
 #include <gtest/gtest.h>
 
@@ -22,22 +23,6 @@
 namespace mydb::contract {
 namespace {
 
-std::map<std::string, std::string> parseServer(std::string_view text) {
-    std::map<std::string, std::string> values;
-    while (!text.empty()) {
-        const std::size_t end = text.find(';');
-        const std::string_view item = text.substr(0, end);
-        if (const std::size_t equals = item.find('='); equals != std::string_view::npos) {
-            values[std::string(item.substr(0, equals))] = std::string(item.substr(equals + 1));
-        }
-        if (end == std::string_view::npos) {
-            break;
-        }
-        text.remove_prefix(end + 1);
-    }
-    return values;
-}
-
 TEST(SessionEndToEndTest, SavedSessionReconnectsWithoutTypingThePassword) {
     const char* raw = std::getenv("MYDB_TEST_MYSQL"); // NOLINT(concurrency-mt-unsafe)
     if (raw == nullptr || *raw == '\0') {
@@ -46,7 +31,7 @@ TEST(SessionEndToEndTest, SavedSessionReconnectsWithoutTypingThePassword) {
     if (raw == nullptr || *raw == '\0') {
         GTEST_SKIP() << "MYDB_TEST_MYSQL/MYDB_TEST_MARIADB não definida";
     }
-    auto server = parseServer(raw);
+    auto server = tests::parseServer(raw);
     // root sem senha não prova nada: cria um usuário com senha só para este teste.
     const std::string user = "mydb_e2e";
     const std::string password = "s3nh@-" + std::to_string(std::random_device{}());
