@@ -19,7 +19,7 @@ Instale o Qt com o script do projeto (exemplo para Windows x64):
 
 ```bash
 python -m pip install -r tools/requirements-dev.txt
-python tools/fetch_qt.py --version 6.11.3 --host windows_x86 --arch win64_msvc2022_64 --out ~/tools/Qt
+python tools/fetch_qt.py --version 6.11.3 --host windows_x86 --arch win64_msvc2022_64 --modules qtbase,qtsvg --out ~/tools/Qt
 # Linux: --host linux_x64 --arch linux_gcc_64 · macOS: --host mac_x64 --arch clang_64
 ```
 

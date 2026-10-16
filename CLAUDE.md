@@ -279,9 +279,10 @@ Condições de medição: build *release*, SSD, sem conexão aberta, salvo indic
 | Executável principal (stripped, sem as libs do Qt) | 13,1 MB | 25 MB (com traduções, temas e ícones embutidos) | **≤ 6 MB** | `size` em CI |
 
 > **Metas por plataforma (decidido em 2026-10-14):** os limites ficam em `bench/budget.json`, com uma seção `platforms` que sobrepõe os valores padrão por SO. Medições da janela Qt 6 vazia na Fase 0: Windows (máquina de desenvolvimento) ~67 ms, ~32,6 MB de working set e ~10,4 MB de *private bytes*; macOS (runner da CI) ~341 ms, ~95 MB de RSS (inclui páginas compartilhadas dos frameworks do sistema) e ~24,5 MB de footprint. **Desde a Fase 3 (decisão de 2026-10-16)**, com o gerenciador de sessões como primeira janela, o orçamento da CI usa as metas desta tabela (≤ 300 ms, ≤ 60 MB, ≤ 25 MB). Medições na CI: Linux 43 ms / 44,7 MB / 8,1 MB; Windows 76 ms / 40,3 MB / 11,3 MB (motor de fontes GDI, ADR-0010); macOS 314 ms / 109,5 MB / 32,8 MB. O macOS tem metas provisórias (≤ 400 ms, ≤ 120 MB de RSS, ≤ 40 MB de footprint) até ser medido num Mac real, e lá os benchmarks são só informativos (ruído do runner).
+> **Árvore com 10 mil tabelas no MariaDB (decidido em 2026-10-16):** a UI leva ~8 ms para carregar e ~6 ms para filtrar (`bench/ui/ObjectTreeBench.cpp`) e o MySQL 8 responde à consulta de objetos em ~140–190 ms (`tests/contract/MySqlScaleTest.cpp`). O MariaDB leva ~3 s porque o `information_schema` abre cada tabela para informar tamanho e linhas; com `table_definition_cache` maior que o número de tabelas cai para ~0,5 s. O limite de 500 ms vale para o MySQL; no MariaDB o teste só publica a medição, e a documentação de usuário deve recomendar o ajuste do cache. A UI não trava em nenhum caso.
 | Trabalho bloqueante na thread da UI | — | **nenhuma tarefa > 16 ms**; zero I/O de rede ou disco | watchdog de debug (§2.3) |
 | Rolagem da grade com 1 milhão de linhas carregadas | — | 60 fps, memória ≤ 1,5× o tamanho bruto dos dados | benchmark de UI |
-| Árvore com 10 mil tabelas | — | carregar ≤ 500 ms; filtrar ≤ 50 ms | benchmark de integração |
+| Árvore com 10 mil tabelas | — | carregar ≤ 500 ms; filtrar ≤ 50 ms | benchmark de integração ⚠️ |
 | Executar um arquivo `.sql` de 1 GB | — | memória constante (streaming), ≤ 80 MB | teste de integração |
 
 As metas são revisadas a cada fase (§5). Uma regressão maior que **10%** em relação a `bench/baseline.json` falha a CI.
@@ -296,7 +297,7 @@ As metas são revisadas a cada fase (§5). Uma regressão maior que **10%** em r
 6. **Limites padrão:** a aba Data busca 1.000 linhas por página; a aba Query avisa antes de materializar mais de 100 mil linhas na grade (a exportação continua em streaming).
 7. **Sem rede na inicialização.** Verificação de atualização e estatísticas são *opt-in*, adiadas e nunca bloqueiam.
 8. **Liberar memória ao fechar** abas de query, resultados e conexões. Caches de metadados têm limite (LRU por banco).
-9. **Recursos enxutos:** ícones em SVG monocromático dentro de um `.qrc` comprimido, renderizados e cacheados no tamanho exato pedido.
+9. **Recursos enxutos:** ícones em SVG monocromático dentro de um `.qrc` comprimido, renderizados e cacheados no tamanho exato pedido. O SVG é lido pelo plugin de imagens do QtSvg, carregado só no primeiro ícone desenhado (ADR-0012).
 
 ### 2.3 Regras de velocidade
 
@@ -343,7 +344,7 @@ public:
     virtual ToolRegistry&     tools()     = 0;
     virtual CommandRegistry&  commands()  = 0;
     virtual EventBus&         events()    = 0;
-    // … hoje existem drivers() e events(); os demais entram com as fases que os usam (major da API sobe)
+    // … hoje existem drivers(), commands() e events(); os demais entram com as fases que os usam (major da API sobe)
 protected:
     ~ModuleContext() = default;
 };
@@ -428,6 +429,7 @@ Outros sistemas (FreeBSD, por exemplo) são "melhor esforço": devem compilar se
 | Build | CMake ≥ 3.25 + Ninja, presets em `CMakePresets.json` | Padrão multiplataforma |
 | Dependências | vcpkg (manifest `vcpkg.json`, baseline em `vcpkg-configuration.json`); o Qt vem dos binários oficiais via `tools/fetch_qt.py` (ADR-0006) | Reprodutível em Linux, Windows e macOS |
 | UI | **Qt 6 Widgets** (`QTreeView`/`QTableView` + models próprios) | Maduro, multiplataforma; equivale à variante Qt6 do HeidiSQL |
+| Ícones | SVGs próprios em `resources/icons/`, lidos pelo plugin de imagens do **QtSvg** sob demanda (ADR-0012) | Nítidos em HiDPI e no tema do sistema, sem custo na inicialização |
 | Editor SQL | **QScintilla** (ou KSyntaxHighlighting + QPlainTextEdit) | Realce, dobra, autocomplete |
 | MySQL/MariaDB | libmariadb (Connector/C) | API C estável, múltiplos resultados, `mysql_kill`/thread id |
 | PostgreSQL | libpq | Oficial; `PQcancel` para cancelar |
@@ -525,6 +527,7 @@ public:
     virtual const ISqlDialect& dialect() const = 0;
     virtual IMetadataProvider& metadata() = 0;
     virtual Capabilities capabilities() = 0;                // interfaces opcionais (ponteiros nulos = ausente)
+    virtual void setQueryLogger(IQueryLogger*) noexcept = 0; // avisa o painel de log de cada SQL enviado
 };
 
 class ISqlDialect {                     // regras textuais do SGBD (sem I/O)
@@ -543,6 +546,7 @@ class IMetadataProvider {               // introspecção (information_schema, p
 public:
     virtual ~IMetadataProvider() = default;
     virtual std::vector<std::string> databases() = 0;
+    virtual std::vector<DatabaseSummary> databaseSummaries() = 0; // tamanho e contagem de objetos (aba Host)
     virtual std::vector<DbObject> objects(std::string_view db) = 0;
     virtual TableDefinition table(const ObjectRef&) = 0;    // colunas, índices, FKs, CHECKs
     virtual std::string createStatement(const ObjectRef&) = 0;
@@ -680,14 +684,14 @@ A partir da Fase 1, toda funcionalidade entra como **módulo** (§2.4). Se uma t
 - **Pronto quando:** dá para criar uma sessão MySQL, salvar, reabrir o app e conectar sem digitar a senha de novo. *(Coberto pelo teste `SessionEndToEndTest` com o cofre real do SO, o JSON em disco e o driver como plugin; falta a CI.)*
 
 ### Fase 4 — Janela principal e navegação
-- [ ] `MainWindow`: árvore de objetos à esquerda, abas à direita, log embaixo (dock). Menus e toolbars são montados a partir do `CommandRegistry`, sem itens fixos no código da janela.
-- [ ] `ObjectTreeModel` com carregamento lazy, várias conexões, filtros de banco e objeto, favoritos, agrupamento e tamanhos.
-- [ ] `CachedMetadataProvider` com invalidação por eventos (DDL executado, refresh).
-- [ ] `ConnectionWorker` + `SessionService` (sinais conectou, banco mudou, objetos mudaram).
-- [ ] Aba **Host**: bancos, variáveis (editáveis), status, processlist (kill, auto-refresh), estatísticas de comandos (via `IServerAdmin`).
-- [ ] Aba **Database**: lista de objetos com metadados.
-- [ ] Painel de log com categorias e filtro (buffer circular com limite de linhas).
-- **Pronto quando:** árvore com 10 mil tabelas carrega em ≤ 500 ms e filtra em ≤ 50 ms; a UI nunca congela durante a introspecção.
+- [x] `MainWindow`: árvore de objetos à esquerda, abas à direita, log embaixo (dock). Menus e toolbars são montados a partir do `CommandRegistry`, sem itens fixos no código da janela. *(Comandos básicos no módulo estático `modules/workbench`; a janela é o `sdk::IWorkbench`.)*
+- [x] `ObjectTreeModel` com carregamento lazy, várias conexões, filtros de banco e objeto, favoritos, agrupamento e tamanhos.
+- [x] `CachedMetadataProvider` com invalidação por eventos (DDL executado, refresh). *(O DDL da Fase 5 em diante chama `SessionService::refresh` com o objeto afetado.)*
+- [x] `ConnectionWorker` + `SessionService` (sinais conectou, banco mudou, objetos mudaram). *(Eventos em `sdk/SessionEvents.hpp`; keep-alive e fuso local implementados.)*
+- [x] Aba **Host**: bancos, variáveis (editáveis), status, processlist (kill, auto-refresh), estatísticas de comandos (via `IServerAdmin`).
+- [x] Aba **Database**: lista de objetos com metadados.
+- [x] Painel de log com categorias e filtro (buffer circular com limite de linhas).
+- **Pronto quando:** árvore com 10 mil tabelas carrega em ≤ 500 ms e filtra em ≤ 50 ms; a UI nunca congela durante a introspecção. *(Implementada em 2026-10-16: UI ~8 ms para carregar e ~6 ms para filtrar; MySQL ~140–190 ms; MariaDB ~3 s, aceito e documentado na §2.1. Falta a CI.)*
 
 ### Fase 5 — Editor de query
 - [ ] `SqlEditor` (QScintilla): realce por dialeto, dobra de código, números de linha, localizar/substituir, comentar/descomentar, mover linhas, word wrap.
@@ -785,7 +789,7 @@ Fases **0 → 6** com MySQL/MariaDB entregam um cliente útil: conectar, navegar
 
 ```bash
 # pré-requisitos: VCPKG_ROOT e QT_ROOT_DIR definidos (ou um CMakeUserPresets.json local; veja o README)
-python tools/fetch_qt.py --version 6.11.3 --host <windows_x86|linux_x64|linux_arm64|mac_x64> --arch <…> --out <pasta>
+python tools/fetch_qt.py --version 6.11.3 --host <windows_x86|linux_x64|linux_arm64|mac_x64> --arch <…> --modules qtbase,qtsvg --out <pasta>
 
 # configurar e compilar (no Windows: prefixe com tools\vsdev.cmd para carregar o MSVC)
 cmake --preset debug
@@ -797,6 +801,7 @@ ctest --preset debug -L unit
 # testes de integração (sobe MySQL, MariaDB e PostgreSQL)
 docker compose -f tests/docker-compose.yml up -d
 ctest --preset debug -L integration
+MYDB_TEST_SCALE=1 ctest --preset release -L integration -R Scale   # 10 mil tabelas (a CI roda em release)
 
 # análise estática e formatação (versões fixas em tools/requirements-dev.txt)
 cmake --build --preset debug --target clang-tidy

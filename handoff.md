@@ -2,7 +2,7 @@
 
 Contexto para qualquer agente de IA (ou pessoa) retomar o trabalho. **Leia este arquivo inteiro e depois o `CLAUDE.md`**, que é a fonte de verdade do projeto. Este arquivo descreve *o que aconteceu e o que falta*; o `CLAUDE.md` descreve *o que construir e como*.
 
-Última atualização: 2026-10-15, com a **Fase 3** (sessões, configurações e credenciais) implementada localmente; falta a CI das Fases 2 e 3.
+Última atualização: 2026-10-16, com a **Fase 4** (janela principal e navegação) implementada localmente; falta a CI dela.
 
 ---
 
@@ -10,7 +10,7 @@ Contexto para qualquer agente de IA (ou pessoa) retomar o trabalho. **Leia este 
 
 - **Projeto:** Mydbsql, um cliente gráfico de bancos de dados inspirado no HeidiSQL, a ser escrito **do zero em C++20**, orientado a objetos, com **SOLID**, **leve, rápido, fácil de estender** e **compatível com Linux, Windows e macOS**.
 - **Estado do repositório:** análise e **Fase 0** commitadas e no GitHub (`main`). Fase 0: CMake, presets, vcpkg, `infra/platform`, logging, `DbError`, janela vazia com `--measure-startup`, testes, benchmarks, CI e ADRs 0001–0006 (§3, item 9).
-- **Fase atual:** **Fase 3** implementada: 140 testes verdes no Windows (unitários, UI com Qt Test, contrato e ponta a ponta com o cofre real). Commits locais `55cf980`, `3bf1908` e `3aa7c81` aguardando o push do usuário. Fases 0 e 1 concluídas; Fase 2 aguardando a CI. Análise do HeidiSQL e do MySQL Workbench concluída.
+- **Fase atual:** **Fase 4** implementada: 147 testes unitários, 3 de UI (14 casos na janela principal) e 33 de integração verdes no Windows. Fases 0 a 3 concluídas, com a CI verde no `6554d90` (só o orçamento do macOS falhou, e ele deixou de bloquear). Análise do HeidiSQL e do MySQL Workbench concluída.
 
 ---
 
@@ -80,6 +80,15 @@ Contexto para qualquer agente de IA (ou pessoa) retomar o trabalho. **Leia este 
    - `ui/dialogs/SessionManagerDialog` (árvore + abas Configurações, SSH, SSL, Avançado; testar e abrir em thread de trabalho) e `main.cpp` como raiz de composição; a janela principal só existe depois de conectar.
    - O build espelha a instalação: executável em `build/<preset>/bin`, módulos em `bin/modules` (Windows) ou `lib/mydbsql/modules` (Linux, macOS).
    - Medição: com texto na primeira janela, o DirectWrite custava ~110 ms para carregar as fontes; com o GDI, o início no Windows ficou em ~68 ms e ~40,5 MB. A memória privada subiu ~18% em relação ao baseline da janela vazia: regenerar os baselines a partir da CI.
+
+13. **2026-10-16, Fase 4.** Decisões do usuário, perguntadas antes: macOS fora do caminho crítico até o fim do plano (ADR-0011), ícones SVG com o QtSvg sob demanda (ADR-0012) e, no MariaDB, a árvore de 10 mil tabelas fora do limite de 500 ms, aceita e documentada (CLAUDE.md §2.1). Feito:
+   - `core`: `IQueryLogger` + `IConnection::setQueryLogger`, `IMetadataProvider::databaseSummaries` (`DatabaseSummary`) e `localUtcOffset`.
+   - `drivers/mysql`: `MySqlServerAdmin` (variáveis, status, processos, KILL), resumo dos bancos numa ida ao servidor, log do SQL enviado e `SET time_zone` com o fuso local (recalculado a cada reconexão).
+   - `services`: `ConnectionWorker` (fila, keep-alive, cancelamento só do trabalho que estava rodando), `CachedMetadataProvider` (LRU, invalidação seletiva), `SessionService` (eventos em `sdk/SessionEvents.hpp`, resultados pelo `Dispatcher`), `LogBuffer` circular, `FavoritesStore` e estatísticas de comandos.
+   - `sdk`: `ICommand`, `CommandRegistry`, `IWorkbench` e `ModuleContext::commands()` (API 2.0); `modules/workbench` com os comandos básicos, registrado em `app/BuiltinModules.cpp`.
+   - `ui`: `MainWindow` (árvore, abas Host e Banco, log), `ObjectTreeModel` + `ObjectTreeFilter`, `HostPanel`, `DatabasePanel`, `LogPanel`, ícones SVG próprios em `resources/icons/`.
+   - Medições (Windows, release): árvore com 10 mil tabelas em ~8 ms e filtro em ~6 ms na UI (`bench/ui/ObjectTreeBench.cpp`, com limites em `bench/budget.json`); consulta de objetos de 10 mil tabelas em ~140–190 ms no MySQL 8 e ~3 s no MariaDB 11.4 (`tests/contract/MySqlScaleTest.cpp`, com `MYDB_TEST_SCALE=1`). Início inalterado (~81 ms, ~39,4 MB, 81 módulos).
+   - CI: o job `integration` passou a compilar em release e roda o teste de 10 mil tabelas; o job de orçamento roda também o `mydb_ui_bench`; o Qt baixa `qtbase,qtsvg`.
 
 ---
 
@@ -151,12 +160,13 @@ Os detalhes estão no `CLAUDE.md` §1. Resumo:
    - **O usuário faz o push.** O agente commita localmente e acompanha a CI depois.
    - O `CMakeUserPresets.json` local (não versionado) tem os presets `win-debug` e `win-release` com os caminhos desta máquina.
 7. **[Sugestão] Triplet estático no Windows** (`x64-windows-static-md`): eliminaria `spdlog.dll`, `fmt.dll`, `gtest*.dll` e `benchmark*.dll` e reduziria os módulos carregados na inicialização. Não foi feito para não divergir da CI sem medir.
-8. **Falta:** push e CI verde do `3f6e91a` em diante. A CI do `0a4ddc2` já passou em todos os builds, na integração (MySQL 8.4 e MariaDB 11.4) e nos testes de UI; faltavam o clang-tidy (corrigido) e o orçamento, que agora usa as metas da §2.1 com baselines da CI (decisão de 2026-10-16). Pendências dentro do plano: `localTimeZone` e `keepAlive` (Fase 4), SRID das colunas espaciais, túnel SSH (Fase 11). **Depois: Fase 4** (janela principal e navegação).
+8. **Falta:** push e CI verde da Fase 4 (jobs novos: teste de UI da janela principal, `mydb_ui_bench` no orçamento, integração em release com 10 mil tabelas, que leva alguns minutos na primeira criação). Os baselines de `bench/baseline/` ainda não têm os benchmarks da árvore: os limites absolutos do `budget.json` já valem. Pendências dentro do plano: SRID das colunas espaciais, túnel SSH (Fase 11), recomendar `table_definition_cache` para MariaDB na documentação de usuário (Fase 12). **Depois: Fase 5** (editor de query).
 9. **2026-10-16: macOS adiado** (decisão do usuário, ADR-0011). Linux e Windows bloqueiam a CI; os jobs do macOS rodam com `continue-on-error`. Pendências para a etapa final de portabilidade:
    - cofre Keychain (`MacCredentialStore`) só exercitado na CI, nunca testado num Mac;
    - metas de início e memória provisórias (§2.1); medir num Mac real e fixar `bench/baseline/macos.json`;
    - benchmarks informativos no macOS (`benchmarksInformative`), por causa da variação de 2× no runner;
    - build universal (arm64 + x86-64) e `.dmg` assinado e notarizado (Fase 12);
+   - início de ~558 ms no runner `macos-latest` na CI do `6554d90` (meta provisória: 400 ms);
    - voltar a tornar os jobs do macOS obrigatórios no `ci.yml`.
 
 ---
@@ -203,10 +213,11 @@ Os detalhes estão no `CLAUDE.md` §1. Resumo:
 | REA | CLI `rea` 6.4.0 global (`%APPDATA%\npm\rea.ps1`), Node 26.10.0. MCP `rea` no `~/.claude.json` com o `env` do Ghidra (backup em `~/.claude.json.bak-2026-10-14`); **funcionando** desde o reinício do Claude Code (2026-10-14) |
 | Compilador | VS 2026 Build Tools 18.10 (`C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools`): MSVC 14.51 (v145), CMake, Ninja e vcpkg embutidos. Fora do PATH: use `tools\vsdev.cmd <comando>`, que chama o `vcvars64.bat` |
 | vcpkg | o embutido no VS (`…\BuildTools\VC\vcpkg`), em modo manifesto. Pacotes em `build/vcpkg_installed`; cache binário padrão do usuário |
-| Qt | `C:\Users\Iberika\tools\Qt\6.11.3\msvc2022_64` (só `qtbase`, binários oficiais via `tools/fetch_qt.py`). Para rodar o `mydbsql.exe` fora do CTest, ponha `…\msvc2022_64\bin` no PATH |
+| Qt | `C:\Users\Iberika\tools\Qt\6.11.3\msvc2022_64` (`qtbase` e `qtsvg`, binários oficiais via `tools/fetch_qt.py`). Para rodar o `mydbsql.exe` fora do CTest, ponha `…\msvc2022_64\bin` no PATH |
 | clang-format / clang-tidy | 23.1.3 / 22.1.8 via `pip --user`, em `%APPDATA%\Python\Python314\Scripts` (fora do PATH) |
 | Build local | `tools\vsdev.cmd cmake --preset win-debug`, `… cmake --build --preset win-debug`, `… ctest --preset win-debug` (presets do `CMakeUserPresets.json` local, com 3 jobs por causa da RAM) |
 | Servidores de teste | Subir: `"C:/Program Files/MySQL/MySQL Server 8.0/bin/mysqld.exe" --no-defaults "--basedir=C:/Program Files/MySQL/MySQL Server 8.0" --datadir=C:/Users/Iberika/tools/db/mysql80-data --port=3307 --bind-address=127.0.0.1 --mysqlx=OFF --innodb-buffer-pool-size=32M --performance-schema=OFF --console` e `C:/Users/Iberika/tools/db/mariadb-11.4.12-winx64/bin/mariadbd.exe --no-defaults --datadir=C:/Users/Iberika/tools/db/mariadb114-data --port=3308 --bind-address=127.0.0.1 --innodb-buffer-pool-size=32M --console`. Parar: `mysqladmin -h 127.0.0.1 -P 3307 -u root shutdown` e `mariadb-admin -h 127.0.0.1 -P 3308 -u root shutdown`. Testes: `MYDB_TEST_MYSQL="host=127.0.0.1;port=3307;user=root;password="`, `MYDB_TEST_MARIADB` igual com a porta 3308, e `ctest --preset win-debug -L integration` |
+| Banco de 10 mil tabelas | `mydb_scale` (tabelas MEMORY) nos dois servidores locais, criado pelo `MySqlScaleTest` e reaproveitado entre execuções (só as definições; as tabelas não têm dados). Apagar: `DROP DATABASE mydb_scale` |
 | Java | `C:\Users\Iberika\tools\jdk-21.0.12.1+1` (Temurin, zip; não está no PATH global) |
 | Ghidra | `C:\Users\Iberika\tools\ghidra_12.1.4_PUBLIC` (zip oficial; `rea doctor` o reconhece com `GHIDRA_INSTALL_DIR` e `JAVA_HOME` definidos) |
 | MySQL Workbench 8.0.47 | **apagado** a pedido do usuário em 2026-10-14 (a cópia extraída e os downloads). Para reanalisar: baixar `https://cdn.mysql.com//Downloads/MySQLGUITools/mysql-workbench-community-8.0.47-winx64.msi` (SHA-256 `f7a0f3c811bcec93456184bb252540cbae4ea32f9af2cc910760fccbce6767bd`) e extrair com `msiexec /a <msi> /qn TARGETDIR=<pasta nova>`. Os arquivos úteis ficam em `PFiles64\MySQL\MySQL Workbench 8.0 CE\` (`structs/`, `data/`, `modules/`, `extras/sakila_full.mwb`) |
