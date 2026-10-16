@@ -6,6 +6,7 @@
 
 #include "core/errors/DbError.hpp"
 #include "core/interfaces/IConnection.hpp"
+#include "core/model/LocalTime.hpp"
 #include "drivers/mysql/MySqlDriver.hpp"
 #include "infra/credentials/MemoryCredentialStore.hpp"
 
@@ -16,6 +17,7 @@
 #include <cstdlib>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <thread>
@@ -378,6 +380,90 @@ TEST_P(MySqlContractTest, IgnoredDatabasesAreHidden) {
     const auto databases = connection->metadata().databases();
     EXPECT_EQ(std::ranges::find(databases, kDatabase), databases.end());
     EXPECT_FALSE(databases.empty());
+}
+
+TEST_P(MySqlContractTest, DatabaseSummariesCountObjects) {
+    run(*m_connection, "CREATE TABLE t1 (id INT PRIMARY KEY); CREATE TABLE t2 (id INT); "
+                       "CREATE VIEW v1 AS SELECT id FROM t1; "
+                       "CREATE PROCEDURE p1() SELECT 1; "
+                       "CREATE FUNCTION f1() RETURNS INT DETERMINISTIC RETURN 1; "
+                       "CREATE TRIGGER tr1 BEFORE INSERT ON t1 FOR EACH ROW SET NEW.id = NEW.id; "
+                       "CREATE EVENT e1 ON SCHEDULE EVERY 1 DAY DISABLE DO SELECT 1");
+    const auto summaries = m_connection->metadata().databaseSummaries();
+    const auto found = std::ranges::find(summaries, kDatabase, &core::model::DatabaseSummary::name);
+    ASSERT_NE(found, summaries.end());
+    EXPECT_EQ(found->tables, 2U);
+    EXPECT_EQ(found->views, 1U);
+    EXPECT_EQ(found->procedures, 1U);
+    EXPECT_EQ(found->functions, 1U);
+    EXPECT_EQ(found->triggers, 1U);
+    EXPECT_EQ(found->events, 1U);
+    EXPECT_FALSE(found->collation.empty());
+    ASSERT_TRUE(found->sizeBytes.has_value());
+    EXPECT_GE(*found->sizeBytes, 0);
+
+    core::ConnectionParams params = m_params;
+    params.ignoreDatabasePattern = "^mydb_contract$";
+    const auto filtered = connect(params)->metadata().databaseSummaries();
+    EXPECT_EQ(std::ranges::find(filtered, kDatabase, &core::model::DatabaseSummary::name), filtered.end());
+}
+
+TEST_P(MySqlContractTest, ServerAdminReadsAndChangesTheServer) {
+    core::IServerAdmin* admin = m_connection->capabilities().serverAdmin;
+    ASSERT_NE(admin, nullptr);
+
+    const auto variables = admin->variables(false);
+    EXPECT_NE(std::ranges::find(variables, "max_allowed_packet", &core::ServerVariable::name), variables.end());
+    EXPECT_FALSE(admin->variables(true).empty());
+
+    admin->setVariable(core::ServerVariable{.name = "sql_select_limit", .value = "5", .global = false});
+    EXPECT_EQ(scalar(*m_connection, "SELECT @@SESSION.sql_select_limit"), "5");
+    admin->setVariable(core::ServerVariable{.name = "sql_select_limit", .value = "default", .global = false});
+    EXPECT_NE(scalar(*m_connection, "SELECT @@SESSION.sql_select_limit"), "5");
+    admin->setVariable(core::ServerVariable{.name = "time_zone", .value = "+02:00", .global = false});
+    EXPECT_EQ(scalar(*m_connection, "SELECT @@SESSION.time_zone"), "+02:00");
+    EXPECT_THROW(admin->setVariable(core::ServerVariable{.name = "x; DROP DATABASE y", .value = "1", .global = false}),
+                 core::QueryError);
+
+    const auto status = admin->status();
+    EXPECT_NE(std::ranges::find(status, "Uptime", &core::ServerVariable::name), status.end());
+
+    const auto victim = connect(m_params);
+    const std::uint64_t victimId = victim->serverInfo().connectionId;
+    const auto processes = admin->processes();
+    EXPECT_NE(std::ranges::find(processes, m_connection->serverInfo().connectionId, &core::ServerProcess::id),
+              processes.end());
+    EXPECT_NE(std::ranges::find(processes, victimId, &core::ServerProcess::id), processes.end());
+    admin->killProcess(victimId);
+    EXPECT_FALSE(victim->ping(false));
+}
+
+TEST_P(MySqlContractTest, QueryLoggerSeesTheSqlSent) {
+    struct Collector final : core::IQueryLogger {
+        void log(core::LogCategory category, std::string_view text) noexcept override {
+            const std::scoped_lock lock(mutex);
+            lines.emplace_back(category, std::string(text));
+        }
+        std::mutex mutex;
+        std::vector<std::pair<core::LogCategory, std::string>> lines;
+    } collector;
+    m_connection->setQueryLogger(&collector);
+    EXPECT_EQ(scalar(*m_connection, "SELECT 7"), "7");
+    (void)m_connection->metadata().databases();
+    m_connection->setQueryLogger(nullptr);
+    (void)scalar(*m_connection, "SELECT 8");
+    ASSERT_EQ(collector.lines.size(), 2U);
+    EXPECT_EQ(collector.lines[0], std::make_pair(core::LogCategory::Sql, std::string("SELECT 7")));
+    EXPECT_EQ(collector.lines[1].second, "SHOW DATABASES");
+}
+
+TEST_P(MySqlContractTest, LocalTimeZoneIsAppliedToTheSession) {
+    core::ConnectionParams params = m_params;
+    params.localTimeZone = true;
+    const auto connection = connect(params);
+    const std::string expected =
+        core::model::formatUtcOffset(core::model::localUtcOffset(std::chrono::system_clock::now()));
+    EXPECT_EQ(scalar(*connection, "SELECT @@SESSION.time_zone"), expected);
 }
 
 INSTANTIATE_TEST_SUITE_P(Servers, MySqlContractTest, ::testing::Values("MYDB_TEST_MYSQL", "MYDB_TEST_MARIADB"),

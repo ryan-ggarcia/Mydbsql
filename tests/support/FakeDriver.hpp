@@ -34,6 +34,7 @@ public:
     const core::ISqlDialect& dialect() const override { throw std::logic_error("não usado"); }
     core::IMetadataProvider& metadata() override { throw std::logic_error("não usado"); }
     core::Capabilities capabilities() override { return {}; }
+    void setQueryLogger(core::IQueryLogger* /*logger*/) noexcept override {}
 
 private:
     core::ConnectionParams m_params;

@@ -16,6 +16,7 @@ namespace mydb::drivers::mysql {
 
 class MySqlExecution;
 class MySqlMetadataProvider;
+class MySqlServerAdmin;
 
 /// Conexão MySQL/MariaDB sobre a libmariadb. Usada por um único ConnectionWorker; só cancelCurrent()
 /// é chamado de outra thread (abre uma conexão auxiliar e envia KILL QUERY, CLAUDE.md §4.5).
@@ -40,7 +41,8 @@ public:
     [[nodiscard]] core::ServerInfo serverInfo() const override { return m_serverInfo; }
     [[nodiscard]] const core::ISqlDialect& dialect() const override { return *m_dialect; }
     [[nodiscard]] core::IMetadataProvider& metadata() override;
-    [[nodiscard]] core::Capabilities capabilities() override { return {}; }
+    [[nodiscard]] core::Capabilities capabilities() override;
+    void setQueryLogger(core::IQueryLogger* logger) noexcept override { m_logger = logger; }
 
     [[nodiscard]] const MySqlDialect& mysqlDialect() const noexcept { return *m_dialect; }
     [[nodiscard]] const core::ConnectionParams& params() const noexcept { return m_params; }
@@ -54,6 +56,7 @@ public:
 private:
     [[nodiscard]] MysqlHandle connect(const std::string& password) const;
     [[nodiscard]] std::string queryScalar(std::string_view sql);
+    void logSql(std::string_view sql) const noexcept;
     void runStartupStatements();
     void requireOpen() const;
 
@@ -65,6 +68,8 @@ private:
     core::ServerInfo m_serverInfo;
     std::unique_ptr<MySqlDialect> m_dialect;
     std::unique_ptr<MySqlMetadataProvider> m_metadata;
+    std::unique_ptr<MySqlServerAdmin> m_serverAdmin;
+    std::atomic<core::IQueryLogger*> m_logger{nullptr};
     MySqlExecution* m_activeExecution{nullptr};
 
     // Lidos por cancelCurrent() em outra thread.

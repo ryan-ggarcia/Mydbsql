@@ -16,6 +16,7 @@ mydb_add_dynamic_module(
 
 add_executable(mydb_tests
     unit/core/DbErrorTest.cpp
+    unit/core/LocalTimeTest.cpp
     unit/core/ModelTest.cpp
     unit/core/SqlSplitterTest.cpp
     unit/core/SqlTokenizerTest.cpp
@@ -25,6 +26,12 @@ add_executable(mydb_tests
     unit/infra/SystemCredentialStoreTest.cpp
     unit/services/SessionRepositoryTest.cpp
     unit/services/SessionConnectorTest.cpp
+    unit/services/CachedMetadataProviderTest.cpp
+    unit/services/CommandStatisticsTest.cpp
+    unit/services/ConnectionWorkerTest.cpp
+    unit/services/FavoritesStoreTest.cpp
+    unit/services/LogBufferTest.cpp
+    unit/services/SessionServiceTest.cpp
     unit/infra/DynamicLibraryTest.cpp
     unit/infra/PlatformTest.cpp
     unit/infra/UrlPolicyTest.cpp
@@ -40,6 +47,7 @@ target_link_libraries(mydb_tests PRIVATE
     mydb_driver_mysql_text
     mydb::settings
     mydb::services_session
+    mydb::services_admin
     GTest::gtest_main)
 target_include_directories(mydb_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_definitions(mydb_tests PRIVATE

@@ -1,9 +1,11 @@
 #include "drivers/mysql/MySqlConnection.hpp"
 
 #include "core/errors/DbError.hpp"
+#include "core/model/LocalTime.hpp"
 #include "core/sql/SqlSplitter.hpp"
 #include "drivers/mysql/MySqlExecution.hpp"
 #include "drivers/mysql/MySqlMetadataProvider.hpp"
+#include "drivers/mysql/MySqlServerAdmin.hpp"
 
 #include <chrono>
 #include <limits>
@@ -177,6 +179,11 @@ void MySqlConnection::runStartupStatements() {
         run(m_dialect->version().mariaDb ? "SET SESSION max_statement_time = " + std::to_string(seconds)
                                          : "SET SESSION max_execution_time = " + std::to_string(seconds * 1000));
     }
+    if (m_params.localTimeZone) {
+        // O offset é calculado a cada abertura: uma reconexão depois da troca de horário de verão acerta.
+        const auto offset = core::model::localUtcOffset(std::chrono::system_clock::now());
+        run("SET time_zone = '" + core::model::formatUtcOffset(offset) + "'");
+    }
     if (!m_params.startupScript.empty()) {
         for (const core::sql::SqlStatement& statement :
              core::sql::SqlSplitter::split(m_params.startupScript, m_dialect->syntax())) {
@@ -187,6 +194,7 @@ void MySqlConnection::runStartupStatements() {
 
 std::string MySqlConnection::queryScalar(std::string_view sql) {
     MYSQL* h = m_handle.get();
+    logSql(sql);
     // NOLINTNEXTLINE(bugprone-suspicious-stringview-data-usage): o tamanho vai no terceiro argumento
     if (mysql_real_query(h, sql.data(), queryLength(sql)) != 0) {
         raise(h);
@@ -233,6 +241,7 @@ std::unique_ptr<core::IExecution> MySqlConnection::execute(std::string_view sql)
         m_activeExecution = nullptr;
     }
     m_cancelRequested = false;
+    logSql(sql);
     const auto started = std::chrono::steady_clock::now();
     // NOLINTNEXTLINE(bugprone-suspicious-stringview-data-usage): o tamanho vai no terceiro argumento
     if (mysql_real_query(m_handle.get(), sql.data(), queryLength(sql)) != 0) {
@@ -257,6 +266,7 @@ void MySqlConnection::cancelCurrent() {
     // A conexão principal está ocupada com a consulta: o KILL QUERY vai por uma conexão auxiliar.
     const MysqlHandle helper = connect(password);
     const std::string kill = "KILL QUERY " + std::to_string(threadId);
+    logSql(kill);
     if (mysql_real_query(helper.get(), kill.data(), queryLength(kill)) != 0) {
         throw core::QueryError(errorInfo(helper.get()));
     }
@@ -278,6 +288,19 @@ core::IMetadataProvider& MySqlConnection::metadata() {
         m_metadata = std::make_unique<MySqlMetadataProvider>(*this);
     }
     return *m_metadata;
+}
+
+core::Capabilities MySqlConnection::capabilities() {
+    if (!m_serverAdmin) {
+        m_serverAdmin = std::make_unique<MySqlServerAdmin>(*this);
+    }
+    return core::Capabilities{.serverAdmin = m_serverAdmin.get()};
+}
+
+void MySqlConnection::logSql(std::string_view sql) const noexcept {
+    if (core::IQueryLogger* logger = m_logger.load()) {
+        logger->log(core::LogCategory::Sql, sql);
+    }
 }
 
 void MySqlConnection::raise(MYSQL* handle) const {

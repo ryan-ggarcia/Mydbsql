@@ -3,8 +3,10 @@
 #include "core/errors/DbError.hpp"
 #include "drivers/mysql/MySqlColumnParser.hpp"
 #include "drivers/mysql/MySqlConnection.hpp"
+#include "drivers/mysql/MySqlRows.hpp"
 
-#include <charconv>
+#include <functional>
+#include <map>
 #include <optional>
 #include <regex>
 #include <string>
@@ -17,56 +19,12 @@ namespace {
 using core::model::DbObject;
 using core::model::ObjectRef;
 using core::model::ObjectType;
-using Row = std::vector<std::optional<std::string>>;
-using Rows = std::vector<Row>;
-
-Rows readAll(core::IResultSet& result) {
-    Rows rows;
-    const std::size_t count = result.columns().size();
-    while (result.next()) {
-        Row row;
-        row.reserve(count);
-        for (std::size_t i = 0; i < count; ++i) {
-            row.push_back(result.isNull(i) ? std::nullopt : std::optional(std::string(result.text(i))));
-        }
-        rows.push_back(std::move(row));
-    }
-    return rows;
-}
-
-/// Executa um lote e devolve as linhas de cada resultado, na ordem das sentenças.
-std::vector<Rows> runBatch(MySqlConnection& connection, const std::string& sql) {
-    std::vector<Rows> results;
-    const auto execution = connection.execute(sql);
-    while (execution->nextResult()) {
-        core::IResultSet* rows = execution->resultSet();
-        results.push_back(rows != nullptr ? readAll(*rows) : Rows{});
-    }
-    return results;
-}
-
-std::string text(const Row& row, std::size_t column) {
-    return row.at(column).value_or(std::string());
-}
-
-template <typename Number>
-std::optional<Number> number(const Row& row, std::size_t column) {
-    const auto& value = row.at(column);
-    if (!value) {
-        return std::nullopt;
-    }
-    Number result{};
-    const auto [end, error] = std::from_chars(value->data(), value->data() + value->size(), result);
-    if (error != std::errc{} || end != value->data() + value->size()) {
-        return std::nullopt;
-    }
-    return result;
-}
-
-std::optional<std::chrono::system_clock::time_point> date(const Row& row, std::size_t column) {
-    const auto& value = row.at(column);
-    return value ? parseDateTime(*value) : std::nullopt;
-}
+using rows::date;
+using rows::number;
+using rows::Row;
+using rows::Rows;
+using rows::runBatch;
+using rows::text;
 
 ObjectType tableType(std::string_view type) {
     if (type == "VIEW" || type == "SYSTEM VIEW") {
@@ -80,29 +38,97 @@ ObjectType tableType(std::string_view type) {
 
 } // namespace
 
-std::vector<std::string> MySqlMetadataProvider::databases() {
-    const std::vector<Rows> results = runBatch(*m_connection, "SHOW DATABASES");
+std::function<bool(const std::string&)> MySqlMetadataProvider::visibleDatabaseFilter() const {
     const std::string& pattern = m_connection->params().ignoreDatabasePattern;
-    std::optional<std::regex> ignore;
-    if (!pattern.empty()) {
-        try {
-            ignore.emplace(pattern, std::regex::ECMAScript | std::regex::icase);
-        } catch (const std::regex_error& error) {
-            throw core::QueryError(
-                core::DbErrorInfo{.message = "Expressão para ignorar bancos inválida: " + std::string(error.what()),
-                                  .code = 0,
-                                  .sqlState = {},
-                                  .hint = "Corrija o filtro de bancos da sessão."});
-        }
+    if (pattern.empty()) {
+        return [](const std::string&) {
+            return true;
+        };
     }
+    try {
+        return [ignore = std::regex(pattern, std::regex::ECMAScript | std::regex::icase)](const std::string& name) {
+            return !std::regex_search(name, ignore);
+        };
+    } catch (const std::regex_error& error) {
+        throw core::QueryError(
+            core::DbErrorInfo{.message = "Expressão para ignorar bancos inválida: " + std::string(error.what()),
+                              .code = 0,
+                              .sqlState = {},
+                              .hint = "Corrija o filtro de bancos da sessão."});
+    }
+}
+
+std::vector<std::string> MySqlMetadataProvider::databases() {
+    const auto visible = visibleDatabaseFilter();
+    const std::vector<Rows> results = runBatch(*m_connection, "SHOW DATABASES");
     std::vector<std::string> names;
     for (const Row& row : results.at(0)) {
         std::string name = text(row, 0);
-        if (!ignore || !std::regex_search(name, *ignore)) {
+        if (visible(name)) {
             names.push_back(std::move(name));
         }
     }
     return names;
+}
+
+std::vector<core::model::DatabaseSummary> MySqlMetadataProvider::databaseSummaries() {
+    const auto visible = visibleDatabaseFilter();
+    // Uma ida ao servidor, agregando por banco (CLAUDE.md §2.3, regra 3).
+    const std::vector<Rows> results =
+        runBatch(*m_connection,
+                 "SELECT SCHEMA_NAME, DEFAULT_COLLATION_NAME FROM information_schema.SCHEMATA ORDER BY SCHEMA_NAME;"
+                 "SELECT TABLE_SCHEMA, SUM(TABLE_TYPE NOT LIKE '%VIEW'), SUM(TABLE_TYPE LIKE '%VIEW'), "
+                 "SUM(DATA_LENGTH + INDEX_LENGTH), MAX(COALESCE(UPDATE_TIME, CREATE_TIME)) "
+                 "FROM information_schema.TABLES GROUP BY TABLE_SCHEMA;"
+                 "SELECT ROUTINE_SCHEMA, SUM(ROUTINE_TYPE = 'PROCEDURE'), SUM(ROUTINE_TYPE = 'FUNCTION') "
+                 "FROM information_schema.ROUTINES GROUP BY ROUTINE_SCHEMA;"
+                 "SELECT TRIGGER_SCHEMA, COUNT(*) FROM information_schema.TRIGGERS GROUP BY TRIGGER_SCHEMA;"
+                 "SELECT EVENT_SCHEMA, COUNT(*) FROM information_schema.EVENTS GROUP BY EVENT_SCHEMA");
+
+    std::vector<core::model::DatabaseSummary> summaries;
+    std::map<std::string, std::size_t, std::less<>> byName;
+    for (const Row& row : results.at(0)) {
+        std::string name = text(row, 0);
+        if (!visible(name)) {
+            continue;
+        }
+        byName.emplace(name, summaries.size());
+        core::model::DatabaseSummary& summary = summaries.emplace_back();
+        summary.name = std::move(name);
+        summary.collation = text(row, 1);
+    }
+    const auto find = [&](const Row& row) -> core::model::DatabaseSummary* {
+        const auto found = byName.find(text(row, 0));
+        return found == byName.end() ? nullptr : &summaries[found->second];
+    };
+    const auto count = [](const Row& row, std::size_t column) {
+        return static_cast<std::uint32_t>(number<std::int64_t>(row, column).value_or(0));
+    };
+    for (const Row& row : results.at(1)) {
+        if (auto* summary = find(row)) {
+            summary->tables = count(row, 1);
+            summary->views = count(row, 2);
+            summary->sizeBytes = number<std::int64_t>(row, 3);
+            summary->lastModified = date(row, 4);
+        }
+    }
+    for (const Row& row : results.at(2)) {
+        if (auto* summary = find(row)) {
+            summary->procedures = count(row, 1);
+            summary->functions = count(row, 2);
+        }
+    }
+    for (const Row& row : results.at(3)) {
+        if (auto* summary = find(row)) {
+            summary->triggers = count(row, 1);
+        }
+    }
+    for (const Row& row : results.at(4)) {
+        if (auto* summary = find(row)) {
+            summary->events = count(row, 1);
+        }
+    }
+    return summaries;
 }
 
 std::vector<DbObject> MySqlMetadataProvider::objects(std::string_view database) {

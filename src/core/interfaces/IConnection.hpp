@@ -2,6 +2,7 @@
 
 #include "core/interfaces/IExecution.hpp"
 #include "core/interfaces/IMetadataProvider.hpp"
+#include "core/interfaces/IQueryLogger.hpp"
 #include "core/interfaces/ISqlDialect.hpp"
 #include "core/interfaces/OptionalCapabilities.hpp"
 #include "core/interfaces/ServerInfo.hpp"
@@ -34,6 +35,9 @@ public:
     [[nodiscard]] virtual const ISqlDialect& dialect() const = 0;
     [[nodiscard]] virtual IMetadataProvider& metadata() = 0;
     [[nodiscard]] virtual Capabilities capabilities() = 0;
+
+    /// Passa a avisar `logger` de cada SQL enviado (nullptr desliga). O logger precisa viver mais que a conexão.
+    virtual void setQueryLogger(IQueryLogger* logger) noexcept = 0;
 
 protected:
     IConnection() = default;

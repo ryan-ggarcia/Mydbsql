@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/model/DatabaseSummary.hpp"
 #include "core/model/DbObject.hpp"
 #include "core/model/ObjectRef.hpp"
 #include "core/model/TableDefinition.hpp"
@@ -17,6 +18,8 @@ public:
     virtual ~IMetadataProvider() = default;
 
     [[nodiscard]] virtual std::vector<std::string> databases() = 0;
+    /// Os mesmos bancos de databases(), com tamanho e contagem de objetos (aba Host).
+    [[nodiscard]] virtual std::vector<model::DatabaseSummary> databaseSummaries() = 0;
     [[nodiscard]] virtual std::vector<model::DbObject> objects(std::string_view database) = 0;
     [[nodiscard]] virtual model::TableDefinition table(const model::ObjectRef& ref) = 0;
     [[nodiscard]] virtual std::string createStatement(const model::ObjectRef& ref) = 0;

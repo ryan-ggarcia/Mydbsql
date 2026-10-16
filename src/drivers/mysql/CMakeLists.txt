@@ -14,6 +14,8 @@ add_library(mydb_driver_mysql_impl STATIC
     MySqlExecution.cpp
     MySqlMetadataProvider.cpp
     MySqlResultSet.cpp
+    MySqlRows.cpp
+    MySqlServerAdmin.cpp
 )
 target_link_libraries(mydb_driver_mysql_impl PUBLIC mydb_driver_mysql_text unofficial::libmariadb)
 if(WIN32)
