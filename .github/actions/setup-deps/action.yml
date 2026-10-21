@@ -11,9 +11,6 @@ inputs:
   qt-version:
     description: versão do Qt
     default: "6.11.3"
-  qt-modules:
-    description: módulos do Qt, separados por vírgula
-    default: "qtbase,qtsvg"
 
 runs:
   using: composite
@@ -50,14 +47,14 @@ runs:
       uses: actions/cache@v4
       with:
         path: ${{ runner.temp }}/Qt
-        key: qt-${{ inputs.qt-version }}-${{ inputs.qt-arch }}-${{ inputs.qt-modules }}-${{ hashFiles('tools/fetch_qt.py') }}
+        key: qt-${{ inputs.qt-version }}-${{ inputs.qt-arch }}-qtsvg-${{ hashFiles('tools/fetch_qt.py') }}
 
     - name: Qt ${{ inputs.qt-version }}
       shell: bash
       run: |
         python -m pip install --quiet py7zr
         dir=$(python tools/fetch_qt.py --version "${{ inputs.qt-version }}" --host "${{ inputs.qt-host }}" \
-              --arch "${{ inputs.qt-arch }}" --modules "${{ inputs.qt-modules }}" --out "${{ runner.temp }}/Qt" | tail -n 1)
+              --arch "${{ inputs.qt-arch }}" --modules qtbase,qtsvg --out "${{ runner.temp }}/Qt" | tail -n 1)
         echo "QT_ROOT_DIR=$dir" >> "$GITHUB_ENV"
         echo "$dir/bin" >> "$GITHUB_PATH"
 
