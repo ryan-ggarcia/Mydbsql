@@ -19,6 +19,12 @@ ObjectRef table(std::string database, std::string name) {
     return ObjectRef{.database = std::move(database), .schema = {}, .name = std::move(name), .type = ObjectType::Table};
 }
 
+DbObject object(ObjectRef ref) {
+    DbObject result;
+    result.ref = std::move(ref);
+    return result;
+}
+
 TEST(LruCacheTest, EvictsTheLeastRecentlyUsed) {
     LruCache<int> cache(2);
     cache.put("a", 1);
@@ -47,8 +53,8 @@ TEST(LruCacheTest, ReplacesAndErasesByPrefix) {
 class CachedMetadataProviderTest : public ::testing::Test {
 protected:
     CachedMetadataProviderTest() {
-        server.objects["app"] = {DbObject{.ref = table("app", "users")}, DbObject{.ref = table("app", "orders")}};
-        server.objects["logs"] = {DbObject{.ref = table("logs", "events")}};
+        server.objects["app"] = {object(table("app", "users")), object(table("app", "orders"))};
+        server.objects["logs"] = {object(table("logs", "events"))};
     }
 
     FakeServer server;

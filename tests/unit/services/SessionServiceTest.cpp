@@ -37,7 +37,9 @@ Session session(std::string id) {
 class SessionServiceTest : public ::testing::Test {
 protected:
     SessionServiceTest() {
-        server.objects["app"] = {DbObject{.ref = ObjectRef{.database = "app", .name = "users"}}};
+        DbObject users;
+        users.ref = ObjectRef{.database = "app", .schema = {}, .name = "users", .type = ObjectType::Table};
+        server.objects["app"] = {users};
         subscriptions.push_back(bus.subscribe<mydb::sdk::SessionOpened>(
             [this](const auto& e) { events.push_back("opened:" + e.sessionId); }));
         subscriptions.push_back(bus.subscribe<mydb::sdk::SessionClosed>(

@@ -14,6 +14,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace mydb::tests {
@@ -70,7 +71,9 @@ public:
         ++m_server->summaryCalls;
         std::vector<core::model::DatabaseSummary> list;
         for (const std::string& name : databases()) {
-            list.push_back(core::model::DatabaseSummary{.name = name});
+            core::model::DatabaseSummary summary;
+            summary.name = name;
+            list.push_back(std::move(summary));
         }
         return list;
     }

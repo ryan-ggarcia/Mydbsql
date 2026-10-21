@@ -57,7 +57,7 @@ LogPanel::LogPanel(services::log::LogBuffer& buffer, const services::Dispatcher&
         action->setCheckable(true);
         action->setChecked(m_visible.at(slot(category)));
         connect(action, &QAction::toggled, this,
-                [this, category](bool visible) { setCategoryVisible(category, visible); });
+                [this, kind = category](bool visible) { setCategoryVisible(kind, visible); });
     }
     menu->addSeparator();
     QAction* clear = menu->addAction(tr("Limpar"));
