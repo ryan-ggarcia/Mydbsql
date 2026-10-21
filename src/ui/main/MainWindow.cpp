@@ -70,12 +70,12 @@ QString menuTitle(std::string_view id) {
 
 /// Posição do menu na barra: os conhecidos na ordem de kMenuOrder, os dos módulos antes de "Ajuda".
 int menuRank(std::string_view id) {
-    const auto found = std::ranges::find(kMenuOrder, id);
-    if (found == kMenuOrder.end()) {
-        return static_cast<int>(kMenuOrder.size()) - 1;
+    for (std::size_t rank = 0; rank < kMenuOrder.size(); ++rank) {
+        if (kMenuOrder.at(rank) == id) {
+            return id == sdk::menus::kHelp ? static_cast<int>(rank) + 1 : static_cast<int>(rank);
+        }
     }
-    const int rank = static_cast<int>(found - kMenuOrder.begin());
-    return id == sdk::menus::kHelp ? rank + 1 : rank;
+    return static_cast<int>(kMenuOrder.size()) - 1;
 }
 
 QKeySequence shortcutFor(const sdk::CommandInfo& info) {

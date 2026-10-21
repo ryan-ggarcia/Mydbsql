@@ -27,13 +27,21 @@ constexpr std::array<std::pair<ObjectType, std::string_view>, 8> kTypeNames{{
 }};
 
 std::string_view typeName(ObjectType type) {
-    const auto found = std::ranges::find(kTypeNames, type, &std::pair<ObjectType, std::string_view>::first);
-    return found == kTypeNames.end() ? "other" : found->second;
+    for (const auto& [value, name] : kTypeNames) {
+        if (value == type) {
+            return name;
+        }
+    }
+    return "other";
 }
 
 ObjectType typeFromName(std::string_view name) {
-    const auto found = std::ranges::find(kTypeNames, name, &std::pair<ObjectType, std::string_view>::second);
-    return found == kTypeNames.end() ? ObjectType::Other : found->first;
+    for (const auto& [value, text] : kTypeNames) {
+        if (text == name) {
+            return value;
+        }
+    }
+    return ObjectType::Other;
 }
 
 } // namespace

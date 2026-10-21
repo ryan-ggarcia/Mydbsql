@@ -13,9 +13,11 @@ import re
 import subprocess
 import sys
 
-ERROR_PATTERN = re.compile(r"error|FAILED|fatal|undefined reference|not found|No such file|Traceback", re.IGNORECASE)
+# \berror\b não casa com nomes de teste como "ErrorsBecome…" ou "ConnectionError/…".
+ERROR_PATTERN = re.compile(r"\berror\b|FAILED|Failure|fatal|undefined reference|not found|No such file|Traceback",
+                           re.IGNORECASE)
 MAX_ERROR_LINES = 40
-MAX_TAIL_LINES = 40
+MAX_TAIL_LINES = 15
 
 
 def escape(text: str) -> str:
@@ -43,7 +45,12 @@ def main() -> int:
         code = process.wait()
 
     if code != 0:
-        errors = [line for line in lines if ERROR_PATTERN.search(line)][:MAX_ERROR_LINES]
+        # A lista de testes que falharam do ctest vem primeiro: a anotação é cortada se ficar longa.
+        failed: list[str] = []
+        if "The following tests FAILED:" in lines:
+            start = lines.index("The following tests FAILED:")
+            failed = [line for line in lines[start:start + MAX_ERROR_LINES] if line.strip()]
+        errors = failed + [line for line in lines if ERROR_PATTERN.search(line)][:MAX_ERROR_LINES]
         tail = lines[-MAX_TAIL_LINES:]
         message = "\n".join([*errors, "----- fim da saída -----", *tail])
         sys.stdout.flush()

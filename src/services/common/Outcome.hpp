@@ -34,7 +34,7 @@ public:
     [[nodiscard]] std::exception_ptr error() const noexcept { return m_error; }
 
 private:
-    Outcome(std::optional<T> value, const std::exception_ptr& error) : m_value(std::move(value)), m_error(error) {}
+    Outcome(std::optional<T> value, std::exception_ptr error) : m_value(std::move(value)), m_error(std::move(error)) {}
 
     std::optional<T> m_value;
     std::exception_ptr m_error;
