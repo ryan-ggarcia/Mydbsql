@@ -90,6 +90,8 @@ Contexto para qualquer agente de IA (ou pessoa) retomar o trabalho. **Leia este 
    - Medições (Windows, release): árvore com 10 mil tabelas em ~8 ms e filtro em ~6 ms na UI (`bench/ui/ObjectTreeBench.cpp`, com limites em `bench/budget.json`); consulta de objetos de 10 mil tabelas em ~140–190 ms no MySQL 8 e ~3 s no MariaDB 11.4 (`tests/contract/MySqlScaleTest.cpp`, com `MYDB_TEST_SCALE=1`). Início inalterado (~81 ms, ~39,4 MB, 81 módulos).
    - CI: o job `integration` passou a compilar em release e roda o teste de 10 mil tabelas; o job de orçamento roda também o `mydb_ui_bench`; o Qt baixa `qtbase,qtsvg`.
 
+14. **2026-10-21, revisão do que foi construído contra o plano.** Subagentes `backend`, `frontend` e `tests` em `.claude/agents/`. Corrigido: chave do cache do Qt com vírgula (derrubava toda a CI da Fase 4); a aba Host chamava o `IServerAdmin` direto da UI e agora usa `services/admin/ServerAdminService`; o gerenciador de sessões inicial é destruído ao fechar (`WA_DeleteOnClose`); o CLAUDE.md não promete mais ViewModels (só quando uma tela pedir, decisão do usuário) nem `CompositionRoot.cpp` (a raiz de composição é o `main.cpp`).
+
 ---
 
 ## 4. O que foi descoberto sobre o HeidiSQL

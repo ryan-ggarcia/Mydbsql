@@ -145,21 +145,23 @@ int run(int argc, char** argv, std::chrono::steady_clock::time_point startedAt) 
             dialog.exec();
         };
 
-        mydb::ui::SessionManagerDialog manager(repository, connector, drivers.availableDrivers(),
-                                               credentials->persistent());
-        manager.setConnectedHandler(onConnected);
+        // Destruído ao fechar (§2.2, regra 1): depois de conectar, a janela principal assume.
+        auto* manager = new mydb::ui::SessionManagerDialog(repository, connector, drivers.availableDrivers(),
+                                                           credentials->persistent());
+        manager->setAttribute(Qt::WA_DeleteOnClose);
+        manager->setConnectedHandler(onConnected);
 
         std::unique_ptr<mydb::app::StartupProbe> probe;
         if (options.measureStartup) {
             probe = std::make_unique<mydb::app::StartupProbe>(*os, startedAt, options);
         }
-        manager.show();
+        manager->show();
         if (probe) {
-            probe->attach(manager);
+            probe->attach(*manager);
         }
         if (!loadError.empty()) {
             const std::filesystem::path backup = backupUnreadableSessions(configDirectory);
-            QMessageBox::warning(&manager, manager.windowTitle(),
+            QMessageBox::warning(manager, manager->windowTitle(),
                                  QObject::tr("Não foi possível ler as sessões salvas:\n%1\n\nCópia do arquivo: %2")
                                      .arg(mydb::ui::toQt(loadError), mydb::ui::pathToQt(backup)));
         }

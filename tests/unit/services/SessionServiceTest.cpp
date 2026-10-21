@@ -1,6 +1,7 @@
 #include "services/session/SessionService.hpp"
 
 #include "sdk/SessionEvents.hpp"
+#include "services/admin/ServerAdminService.hpp"
 #include "support/FakeServer.hpp"
 #include "support/TestDispatcher.hpp"
 
@@ -175,6 +176,16 @@ TEST_F(SessionServiceTest, CancelInterruptsRunningWork) {
     const auto outcome = wait(result);
     ASSERT_FALSE(outcome.ok());
     EXPECT_THROW(std::rethrow_exception(outcome.error()), mydb::core::CancelledError);
+}
+
+TEST_F(SessionServiceTest, ServerAdminWithoutCapabilityFails) {
+    open();
+    mydb::services::admin::ServerAdminService admin(service);
+    std::optional<Outcome<std::vector<mydb::core::ServerVariable>>> result;
+    admin.status("s1", [&](auto outcome) { result.emplace(std::move(outcome)); });
+    const auto outcome = wait(result);
+    ASSERT_FALSE(outcome.ok());
+    EXPECT_THROW(std::rethrow_exception(outcome.error()), mydb::core::QueryError);
 }
 
 } // namespace

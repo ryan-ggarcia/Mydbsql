@@ -1,7 +1,5 @@
 #include "ui/panels/HostPanel.hpp"
 
-#include "core/errors/DbError.hpp"
-#include "services/admin/CommandStatistics.hpp"
 #include "ui/common/ErrorText.hpp"
 #include "ui/common/Icons.hpp"
 #include "ui/common/QtText.hpp"
@@ -32,45 +30,30 @@ namespace mydb::ui {
 
 namespace {
 
-using services::session::WorkContext;
-
 constexpr int kDatabasesTab = 0;
 constexpr int kVariablesTab = 1;
 constexpr int kStatusTab = 2;
 constexpr int kProcessesTab = 3;
 constexpr int kCommandsTab = 4;
 
-core::IServerAdmin& requireAdmin(const WorkContext& context) {
-    core::IServerAdmin* admin = context.connection().capabilities().serverAdmin;
-    if (admin == nullptr) {
-        throw core::QueryError("Este servidor não oferece variáveis, status nem processos.");
-    }
-    return *admin;
-}
-
-struct Variables {
-    std::vector<core::ServerVariable> session;
-    std::vector<core::ServerVariable> global;
-};
-
-/// Pede `work` à sessão e entrega o resultado a `apply`, se a aba ainda mostrar a mesma sessão.
-template <typename R, typename Work, typename Apply>
-void request(services::session::SessionService& sessions, HostPanel* panel, TableTab* table, Work work, Apply apply) {
+/// Chama `call(sessão, callback)` e entrega o resultado a `apply`, se a aba ainda mostrar a mesma sessão.
+template <typename R, typename Call, typename Apply>
+void request(HostPanel* panel, TableTab* table, Call call, Apply apply) {
     std::string session = panel->sessionId();
     table->setStatus(HostPanel::tr("Carregando…"));
     QPointer<HostPanel> self(panel);
     QPointer<TableTab> target(table);
-    sessions.run<R>(session, std::move(work),
-                    [self, target, session, apply = std::move(apply)](services::Outcome<R> outcome) mutable {
-                        if (!self || !target || self->sessionId() != session) {
-                            return;
-                        }
-                        if (!outcome.ok()) {
-                            target->setStatus(errorText(outcome.error()));
-                            return;
-                        }
-                        apply(std::move(outcome).value());
-                    });
+    call(session, services::Completion<R>(
+                      [self, target, session, apply = std::move(apply)](services::Outcome<R> outcome) mutable {
+                          if (!self || !target || self->sessionId() != session) {
+                              return;
+                          }
+                          if (!outcome.ok()) {
+                              target->setStatus(errorText(outcome.error()));
+                              return;
+                          }
+                          apply(std::move(outcome).value());
+                      }));
 }
 
 } // namespace
@@ -78,6 +61,7 @@ void request(services::session::SessionService& sessions, HostPanel* panel, Tabl
 HostPanel::HostPanel(services::session::SessionService& sessions, QWidget* parent)
     : QWidget(parent),
       m_sessions(sessions),
+      m_admin(sessions),
       m_tabs(new QTabWidget(this)),
       m_hideSleeping(new QCheckBox(tr("Esconder ociosos"), this)),
       m_processInterval(new QSpinBox(this)),
@@ -213,7 +197,7 @@ void HostPanel::load(int tab) {
 void HostPanel::loadDatabases() {
     TableTab* table = m_tables[kDatabasesTab];
     request<std::vector<core::model::DatabaseSummary>>(
-        m_sessions, this, table, [](WorkContext& context) { return context.metadata().databaseSummaries(); },
+        this, table, [this](std::string_view id, auto done) { m_sessions.databaseSummaries(id, std::move(done)); },
         [table](const std::vector<core::model::DatabaseSummary>& summaries) {
             std::vector<RowsModel::Row> rows;
             rows.reserve(summaries.size());
@@ -232,13 +216,9 @@ void HostPanel::loadDatabases() {
 
 void HostPanel::loadVariables() {
     TableTab* table = m_tables[kVariablesTab];
-    request<Variables>(
-        m_sessions, this, table,
-        [](WorkContext& context) {
-            core::IServerAdmin& admin = requireAdmin(context);
-            return Variables{.session = admin.variables(false), .global = admin.variables(true)};
-        },
-        [table](const Variables& variables) {
+    request<services::admin::ServerVariables>(
+        this, table, [this](std::string_view id, auto done) { m_admin.variables(id, std::move(done)); },
+        [table](const services::admin::ServerVariables& variables) {
             std::map<std::string, std::pair<QString, QString>> merged;
             for (const auto& variable : variables.session) {
                 merged[variable.name].first = toQt(variable.value);
@@ -259,7 +239,7 @@ void HostPanel::loadVariables() {
 void HostPanel::loadStatus() {
     TableTab* table = m_tables[kStatusTab];
     request<std::vector<core::ServerVariable>>(
-        m_sessions, this, table, [](WorkContext& context) { return requireAdmin(context).status(); },
+        this, table, [this](std::string_view id, auto done) { m_admin.status(id, std::move(done)); },
         [table](const std::vector<core::ServerVariable>& status) {
             std::vector<RowsModel::Row> rows;
             rows.reserve(status.size());
@@ -275,7 +255,7 @@ void HostPanel::loadProcesses() {
     TableTab* table = m_tables[kProcessesTab];
     const bool hideSleeping = m_hideSleeping->isChecked();
     request<std::vector<core::ServerProcess>>(
-        m_sessions, this, table, [](WorkContext& context) { return requireAdmin(context).processes(); },
+        this, table, [this](std::string_view id, auto done) { m_admin.processes(id, std::move(done)); },
         [table, hideSleeping](const std::vector<core::ServerProcess>& processes) {
             std::vector<RowsModel::Row> rows;
             rows.reserve(processes.size());
@@ -295,8 +275,7 @@ void HostPanel::loadProcesses() {
 void HostPanel::loadCommands() {
     TableTab* table = m_tables[kCommandsTab];
     request<std::vector<services::admin::CommandStatistic>>(
-        m_sessions, this, table,
-        [](WorkContext& context) { return services::admin::commandStatistics(requireAdmin(context).status()); },
+        this, table, [this](std::string_view id, auto done) { m_admin.commandStatistics(id, std::move(done)); },
         [table](const std::vector<services::admin::CommandStatistic>& statistics) {
             std::vector<RowsModel::Row> rows;
             rows.reserve(statistics.size());
@@ -344,22 +323,17 @@ void HostPanel::editVariable(int sourceRow) {
         .name = toStd(name), .value = toStd(value->text()), .global = globalScope->isChecked()};
     std::string session = m_sessionId;
     QPointer<HostPanel> self(this);
-    m_sessions.run<services::Done>(
-        session,
-        [variable](WorkContext& context) {
-            requireAdmin(context).setVariable(variable);
-            return services::Done{};
-        },
-        [self, session](const services::Outcome<services::Done>& outcome) {
-            if (!self || self->m_sessionId != session) {
-                return;
-            }
-            if (!outcome.ok()) {
-                QMessageBox::warning(self, tr("Editar variável"), errorText(outcome.error()));
-                return;
-            }
-            self->loadVariables();
-        });
+    m_admin.setVariable(session, std::move(variable),
+                        [self, session](const services::Outcome<services::Done>& outcome) {
+                            if (!self || self->m_sessionId != session) {
+                                return;
+                            }
+                            if (!outcome.ok()) {
+                                QMessageBox::warning(self, tr("Editar variável"), errorText(outcome.error()));
+                                return;
+                            }
+                            self->loadVariables();
+                        });
 }
 
 void HostPanel::killSelectedProcess() {
@@ -378,21 +352,15 @@ void HostPanel::killSelectedProcess() {
     }
     std::string sessionId = m_sessionId;
     QPointer<HostPanel> self(this);
-    m_sessions.run<services::Done>(
-        sessionId,
-        [id](WorkContext& context) {
-            requireAdmin(context).killProcess(id);
-            return services::Done{};
-        },
-        [self, sessionId](const services::Outcome<services::Done>& outcome) {
-            if (!self || self->m_sessionId != sessionId) {
-                return;
-            }
-            if (!outcome.ok()) {
-                QMessageBox::warning(self, tr("Encerrar processo"), errorText(outcome.error()));
-            }
-            self->loadProcesses();
-        });
+    m_admin.killProcess(sessionId, id, [self, sessionId](const services::Outcome<services::Done>& outcome) {
+        if (!self || self->m_sessionId != sessionId) {
+            return;
+        }
+        if (!outcome.ok()) {
+            QMessageBox::warning(self, tr("Encerrar processo"), errorText(outcome.error()));
+        }
+        self->loadProcesses();
+    });
 }
 
 } // namespace mydb::ui

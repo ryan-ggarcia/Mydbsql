@@ -1,5 +1,6 @@
 #pragma once
 
+#include "services/admin/ServerAdminService.hpp"
 #include "services/session/SessionService.hpp"
 
 #include <QWidget>
@@ -53,6 +54,7 @@ private:
     void updateAvailability();
 
     services::session::SessionService& m_sessions;
+    services::admin::ServerAdminService m_admin;
     std::string m_sessionId;
     std::array<bool, kTabCount> m_loaded{};
 

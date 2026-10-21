@@ -111,7 +111,7 @@ Este arquivo é a fonte de verdade para quem trabalhar no repositório (humanos 
 
 | Problema no HeidiSQL | Solução no Mydbsql (princípio) |
 |---|---|
-| `main.pas` com 16k linhas concentra tudo | Views finas + ViewModels/Presenters + Services (**SRP**) |
+| `main.pas` com 16k linhas concentra tudo | Views finas + Services (**SRP**) |
 | `TDBConnection` tem dezenas de responsabilidades (query, cache, escape, metadados, SSH, log, keep-alive) | Separar em `IConnection`, `ISqlDialect`, `IMetadataProvider`, `IMetadataCache`, `ITunnel`, `IQueryLogger` (**SRP**, **ISP**) |
 | `case NetType of …` espalhado pelo código | Polimorfismo + registro de drivers (`DriverRegistry`) (**OCP**) |
 | `TSqlProvider` indexado por um enum gigante (`TQueryId`) | Interfaces de dialeto coesas e específicas (`IDdlGenerator`, `IAdminQueries`, …) (**ISP**) |
@@ -460,7 +460,7 @@ Outros sistemas (FreeBSD, por exemplo) são "melhor esforço": devem compilar se
 │  app/        main(), composição (injeção de dependências)    │
 ├──────────────────────────────────────────────────────────────┤
 │  ui/         Views Qt (widgets, diálogos) + Qt models         │
-│              ↕ só via ViewModels / Presenters                │
+│              ↕ só via services (sem SQL nem capabilities)    │
 ├──────────────────────────────────────────────────────────────┤
 │  services/   Casos de uso: SessionService, QueryService,     │
 │              DataEditService, ExportService, DumpService,    │
@@ -578,7 +578,7 @@ Para descobrir capacidades opcionais, use um `capabilities()` que devolve pontei
 - **O (aberto/fechado).** Para adicionar um SGBD, crie `drivers/<novo>/` como módulo que registra um `IDriver` (§2.4). Para adicionar um formato de exportação, crie uma nova classe `IResultExporter` e registre-a. Nenhum `switch` central é editado.
 - **L (substituição de Liskov).** Qualquer `IConnection` precisa passar na mesma suíte de testes de contrato (`tests/contract/connection_contract_test.cpp`), parametrizada por driver. Se um SGBD não suporta algo, a capacidade fica ausente em vez de lançar `NotImplemented`.
 - **I (segregação de interfaces).** O antigo `TSqlProvider` monolítico vira `ISqlDialect`, `IDdlGenerator`, `IServerAdmin`, `IUserAdmin`, `ITableMaintenance` e `IBulkLoader`. A UI de manutenção depende só de `ITableMaintenance`.
-- **D (inversão de dependência).** Services recebem interfaces no construtor. A composição concreta fica em `app/CompositionRoot.cpp`. Nada de singletons globais (exceção tolerada: o logger).
+- **D (inversão de dependência).** Services recebem interfaces no construtor. A composição concreta fica em `app/main.cpp`. Nada de singletons globais (exceção tolerada: o logger).
 
 ### 4.4 Padrões de projeto usados
 
@@ -586,14 +586,14 @@ Para descobrir capacidades opcionais, use um `capabilities()` que devolve pontei
 |---|---|
 | Abstract Factory / Registry | `IDriver` + `DriverRegistry`; `ExporterRegistry` |
 | Strategy | Exportadores, estratégias de importação (servidor × cliente), geração de dados |
-| Command | Ações da UI (`QAction` → `ICommand` no ViewModel); edições de grade com undo/redo |
+| Command | Ações da UI (`QAction` → `sdk::ICommand`, executado sobre o `IWorkbench`); edições de grade com undo/redo |
 | Unit of Work | `DataEditSession`: acumula alterações de linhas e gera um único INSERT/UPDATE/DELETE por linha usando a chave primária ou única (equivale a `TDBQuery.SaveModifications`/`GetWhereClause`) |
 | Observer | Sinais de `SessionService` (conectou, mudou de banco, objetos alterados), equivalentes aos `OnConnected`/`OnDatabaseChanged` do HeidiSQL |
 | Builder | `CreateTableBuilder`, `AlterTableBuilder` (diff entre `TableDefinition` antiga e nova → DDL) |
 | Decorator | `LoggingConnection`, `TimingConnection` envolvendo uma `IConnection` |
 | Proxy / Cache | `CachedMetadataProvider` envolvendo `IMetadataProvider` |
 | Template Method (com moderação) | Base de exportador de texto tabular (cabeçalho, linhas, rodapé) |
-| MVVM / MVP | UI Qt |
+| Views finas | UI Qt: widgets e Qt models falam só com services. Um ViewModel só entra quando uma tela tiver lógica de apresentação que mereça teste próprio (decidido em 2026-10-21) |
 
 ### 4.5 Concorrência
 
@@ -629,7 +629,7 @@ Mydbsql/
 │   │   ├── editors/               # SqlEditor, TableDesigner, RoutineEditor, …
 │   │   ├── dialogs/               # SessionManager, Preferences, Export, Import, …
 │   │   └── delegates/             # editores in-place (Hex, DateTime, Enum, Set)
-│   └── app/                       # main.cpp, CompositionRoot, BuiltinModules, ModuleHost
+│   └── app/                       # main.cpp (raiz de composição), BuiltinModules, ModuleHost
 ├── resources/                     # ícones SVG próprios/livres, .qrc, traduções, snippets
 ├── bench/                         # Google Benchmark + baseline.json (§2.5)
 ├── tests/
@@ -681,7 +681,7 @@ A partir da Fase 1, toda funcionalidade entra como **módulo** (§2.4). Se uma t
 - [x] `SessionRepository`: CRUD de sessões em árvore com pastas, cor, comentário, estatísticas; exportar e importar.
 - [x] `ICredentialStore` (APIs nativas, ADR-0009) + fallback em memória para testes e para SOs sem cofre.
 - [x] UI: **Gerenciador de sessões** (árvore + abas Configurações, SSH, SSL, Avançado), testar conexão.
-- **Pronto quando:** dá para criar uma sessão MySQL, salvar, reabrir o app e conectar sem digitar a senha de novo. *(Coberto pelo teste `SessionEndToEndTest` com o cofre real do SO, o JSON em disco e o driver como plugin; falta a CI.)*
+- **Pronto quando:** dá para criar uma sessão MySQL, salvar, reabrir o app e conectar sem digitar a senha de novo. *(Coberto pelo teste `SessionEndToEndTest` com o cofre real do SO, o JSON em disco e o driver como plugin; CI verde em `6554d90`.)*
 
 ### Fase 4 — Janela principal e navegação
 - [x] `MainWindow`: árvore de objetos à esquerda, abas à direita, log embaixo (dock). Menus e toolbars são montados a partir do `CommandRegistry`, sem itens fixos no código da janela. *(Comandos básicos no módulo estático `modules/workbench`; a janela é o `sdk::IWorkbench`.)*
@@ -842,7 +842,7 @@ python tools/check_budget.py --startup run1.json run2.json run3.json --budget be
 | `TGridExportFormat` (enum + case) | `services::export::IResultExporter` + `ExporterRegistry` |
 | `TToolMode` (tabletools) | Módulos separados (`ITool`): manutenção, busca no servidor, dump, edição em massa e gerador de dados |
 | `grideditlinks` (`T*EditorLink`) | `ui::delegates::*Delegate` (`QStyledItemDelegate`) |
-| `main.pas` | `MainWindow` (view) + `MainViewModel` + services; menus vindos do `CommandRegistry` |
+| `main.pas` | `MainWindow` (view) + services; menus vindos do `CommandRegistry` |
 | `TQueryHistory` (só visto no binário) | `services::query::QueryHistoryStore` |
 | Tudo compilado num executável de 13 MB | Núcleo + `sdk/` + módulos e drivers plugáveis (§2.4) |
 
