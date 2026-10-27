@@ -60,12 +60,7 @@ std::string toUpper(std::string_view text) {
 
 template <std::size_t N>
 bool contains(const std::array<std::string_view, N>& list, std::string_view word) {
-    for (const std::string_view item : list) {
-        if (item == word) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(list, [word](std::string_view item) { return item == word; });
 }
 
 bool isReserved(std::string_view word) {
@@ -230,9 +225,7 @@ private:
             newLine(m_lineIndent);
         } else if (depthZero && contains(kClauses, word) && !contains(kJoiners, m_previousWord)) {
             newLine(false);
-        } else if (depthZero && m_clause == Clause::Condition && (word == "and" || word == "or")) {
-            newLine(true);
-        } else if (m_breakNext) {
+        } else if ((depthZero && m_clause == Clause::Condition && (word == "and" || word == "or")) || m_breakNext) {
             newLine(true);
         } else if (m_hadSpace) {
             m_out += ' ';

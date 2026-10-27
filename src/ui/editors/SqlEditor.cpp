@@ -138,7 +138,7 @@ int indentOf(const QString& text) {
 
 class OpenerData final : public QTextBlockUserData {
 public:
-    OpenerData(std::string opener, int lines) : opener(std::move(opener)), lines(lines) {}
+    OpenerData(std::string token, int crossed) : opener(std::move(token)), lines(crossed) {}
     std::string opener; // NOLINT(misc-non-private-member-variables-in-classes)
     int lines;          // NOLINT(misc-non-private-member-variables-in-classes): linhas que o token já atravessou
 };

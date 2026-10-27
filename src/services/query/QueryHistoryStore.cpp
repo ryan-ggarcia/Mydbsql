@@ -72,14 +72,15 @@ void QueryHistoryStore::add(HistoryEntry entry) {
 std::vector<HistoryEntry> QueryHistoryStore::search(std::string_view text, std::string_view sessionId) const {
     const std::string needle = lowerAscii(text);
     std::vector<HistoryEntry> found;
-    for (auto it = m_entries.rbegin(); it != m_entries.rend(); ++it) {
-        if (!sessionId.empty() && it->sessionId != sessionId) {
+    for (const HistoryEntry& entry : m_entries) {
+        if (!sessionId.empty() && entry.sessionId != sessionId) {
             continue;
         }
-        if (needle.empty() || lowerAscii(it->sql).find(needle) != std::string::npos) {
-            found.push_back(*it);
+        if (needle.empty() || lowerAscii(entry.sql).find(needle) != std::string::npos) {
+            found.push_back(entry);
         }
     }
+    std::ranges::reverse(found); // mais recente primeiro
     return found;
 }
 

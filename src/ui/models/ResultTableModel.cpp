@@ -33,13 +33,14 @@ QVariant ResultTableModel::data(const QModelIndex& index, int role) const {
     }
     const auto& row = m_table.rows.at(static_cast<std::size_t>(index.row()));
     const auto column = static_cast<std::size_t>(index.column());
-    const bool isNull = column >= row.size() || !row[column];
+    const std::string* text = column < row.size() && row[column] ? &*row[column] : nullptr;
+    const bool isNull = text == nullptr;
     switch (role) {
     case Qt::DisplayRole:
         if (isNull) {
             return QStringLiteral("NULL");
         }
-        return toQt(std::string_view(*row[column]).substr(0, kMaxCellChars));
+        return toQt(std::string_view(*text).substr(0, kMaxCellChars));
     case Qt::ForegroundRole:
         if (isNull) {
             return QPalette().brush(QPalette::Disabled, QPalette::Text);

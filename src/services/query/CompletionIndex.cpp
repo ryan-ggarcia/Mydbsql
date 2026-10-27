@@ -593,8 +593,8 @@ std::vector<std::string> sqlKeywords(std::string_view driverId) {
         keywords.insert(keywords.end(), kMySql.begin(), kMySql.end());
     }
     std::ranges::sort(keywords);
-    const auto [first, last] = std::ranges::unique(keywords);
-    keywords.erase(first, last);
+    // NOLINTNEXTLINE(modernize-use-ranges): o std::ranges::unique não compila no Clang 15 com a libstdc++ 12
+    keywords.erase(std::unique(keywords.begin(), keywords.end()), keywords.end());
     return keywords;
 }
 

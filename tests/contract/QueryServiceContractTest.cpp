@@ -193,7 +193,7 @@ TEST_P(QueryServiceContractTest, RunsAFileInStreaming) {
 }
 
 INSTANTIATE_TEST_SUITE_P(Servers, QueryServiceContractTest, ::testing::Values("MYDB_TEST_MYSQL", "MYDB_TEST_MARIADB"),
-                         [](const auto& info) { return std::string(info.param).substr(10); });
+                         [](const auto& test) { return std::string(test.param).substr(10); });
 
 } // namespace
 } // namespace mydb::contract
