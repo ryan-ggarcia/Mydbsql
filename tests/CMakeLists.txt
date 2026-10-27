@@ -33,6 +33,10 @@ add_executable(mydb_tests
     unit/services/FavoritesStoreTest.cpp
     unit/services/LogBufferTest.cpp
     unit/services/SessionServiceTest.cpp
+    unit/services/CompletionIndexTest.cpp
+    unit/services/QueryDocumentsTest.cpp
+    unit/services/QueryHistoryStoreTest.cpp
+    unit/services/QueryServiceTest.cpp
     unit/infra/DynamicLibraryTest.cpp
     unit/infra/PlatformTest.cpp
     unit/infra/UrlPolicyTest.cpp
@@ -49,13 +53,15 @@ target_link_libraries(mydb_tests PRIVATE
     mydb::settings
     mydb::services_session
     mydb::services_admin
+    mydb::services_query
     GTest::gtest_main)
 target_include_directories(mydb_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_definitions(mydb_tests PRIVATE
     MYDB_TEST_PLUGIN_PATH="$<TARGET_FILE:mydb_test_plugin>"
     MYDB_EXAMPLE_MODULE_PATH="$<TARGET_FILE:mydb_module_example_hello>"
     MYDB_BAD_VERSION_MODULE_PATH="$<TARGET_FILE:mydb_module_test_bad_version>"
-    MYDB_MYSQL_DRIVER_PATH="$<TARGET_FILE:mydb_driver_mysql>")
+    MYDB_MYSQL_DRIVER_PATH="$<TARGET_FILE:mydb_driver_mysql>"
+    MYDB_FUNCTIONS_DIR="${PROJECT_SOURCE_DIR}/resources/functions")
 add_dependencies(mydb_tests mydb_test_plugin mydb_module_example_hello mydb_module_test_bad_version mydb_driver_mysql)
 mydb_set_warnings(mydb_tests)
 
@@ -67,12 +73,14 @@ add_executable(mydb_contract_tests
     contract/MySqlContractTest.cpp
     contract/MySqlScaleTest.cpp
     contract/SessionEndToEndTest.cpp
+    contract/QueryServiceContractTest.cpp
 )
 target_link_libraries(mydb_contract_tests PRIVATE
     mydb_driver_mysql_impl
     mydb::app_support
     mydb::settings
     mydb::services_session
+    mydb::services_query
     GTest::gtest_main)
 target_include_directories(mydb_contract_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_definitions(mydb_contract_tests PRIVATE

@@ -36,9 +36,9 @@ struct ResultTable {
 
 /// O que aconteceu com uma sentença.
 struct StatementResult {
-    std::size_t index{0};       ///< posição da sentença na execução, a partir de 0
-    std::string sql;            ///< a sentença como foi enviada
-    std::uint32_t line{1};      ///< linha no editor
+    std::size_t index{0};             ///< posição da sentença na execução, a partir de 0
+    std::string sql;                  ///< a sentença como foi enviada
+    std::uint32_t line{1};            ///< linha no editor
     std::optional<ResultTable> table; ///< vazio quando a sentença não devolve linhas
     std::int64_t rowsAffected{-1};
     std::uint32_t warnings{0};

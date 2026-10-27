@@ -17,28 +17,26 @@ namespace {
 
 // Só palavras reservadas no MySQL/MariaDB: não podem ser identificadores sem aspas, então mudar a caixa
 // nunca troca o nome de uma tabela (que no Linux diferencia maiúsculas).
-constexpr auto kReserved = std::to_array<std::string_view>({
-    "add",       "all",       "alter",      "and",     "as",       "asc",        "between", "by",
-    "call",      "case",      "check",      "collate", "column",   "constraint", "create",  "cross",
-    "database",  "declare",   "default",    "delete",  "desc",     "describe",   "distinct", "drop",
-    "else",      "elseif",    "exists",     "explain", "false",    "for",        "foreign", "from",
-    "grant",     "group",     "having",     "if",      "in",       "index",      "inner",   "insert",
-    "interval",  "into",      "is",         "join",    "key",      "left",       "like",    "limit",
-    "lock",      "loop",      "natural",    "not",     "null",     "on",         "or",      "order",
-    "outer",     "primary",   "procedure",  "references", "rename", "replace",   "return",  "revoke",
-    "right",     "schema",    "select",     "set",     "show",     "table",      "then",    "trigger",
-    "true",      "union",     "unique",     "unlock",  "update",   "use",        "using",   "values",
-    "when",      "where",     "while",      "with"});
+constexpr auto kReserved = std::to_array<std::string_view>(
+    {"add",     "all",    "alter",   "and",      "as",         "asc",        "between", "by",       "call",
+     "case",    "check",  "collate", "column",   "constraint", "create",     "cross",   "database", "declare",
+     "default", "delete", "desc",    "describe", "distinct",   "drop",       "else",    "elseif",   "exists",
+     "explain", "false",  "for",     "foreign",  "from",       "grant",      "group",   "having",   "if",
+     "in",      "index",  "inner",   "insert",   "interval",   "into",       "is",      "join",     "key",
+     "left",    "like",   "limit",   "lock",     "loop",       "natural",    "not",     "null",     "on",
+     "or",      "order",  "outer",   "primary",  "procedure",  "references", "rename",  "replace",  "return",
+     "revoke",  "right",  "schema",  "select",   "set",        "show",       "table",   "then",     "trigger",
+     "true",    "union",  "unique",  "unlock",   "update",     "use",        "using",   "values",   "when",
+     "where",   "while",  "with"});
 
 /// Começam uma linha nova (no nível zero de parênteses).
-constexpr auto kClauses = std::to_array<std::string_view>({"select", "from",   "where", "join",   "left",
-                                                           "right",  "inner",  "cross", "on",     "group",
-                                                           "order",  "having", "limit", "union",  "values",
-                                                           "set",    "insert", "update", "delete"});
+constexpr auto kClauses = std::to_array<std::string_view>({"select", "from", "where", "join", "left", "right", "inner",
+                                                           "cross", "on", "group", "order", "having", "limit", "union",
+                                                           "values", "set", "insert", "update", "delete"});
 
 /// Depois destas, a palavra seguinte continua a mesma cláusula ("LEFT JOIN", "DELETE FROM").
-constexpr auto kJoiners = std::to_array<std::string_view>(
-    {"left", "right", "inner", "cross", "outer", "natural", "delete", "full"});
+constexpr auto kJoiners =
+    std::to_array<std::string_view>({"left", "right", "inner", "cross", "outer", "natural", "delete", "full"});
 
 char lower(char c) noexcept {
     return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
@@ -136,7 +134,9 @@ public:
     std::string take() { return std::move(m_out); }
 
 private:
-    [[nodiscard]] std::string_view text(const SqlToken& token) const { return m_sql.substr(token.offset, token.length); }
+    [[nodiscard]] std::string_view text(const SqlToken& token) const {
+        return m_sql.substr(token.offset, token.length);
+    }
 
     /// "DELIMITER x" vai até o fim da linha e é copiado como está.
     bool delimiterCommand(std::size_t& i) {
@@ -145,7 +145,8 @@ private:
         if (lineEnd == std::string_view::npos) {
             lineEnd = m_sql.size();
         }
-        const std::string_view argument = trim(m_sql.substr(word.offset + word.length, lineEnd - word.offset - word.length));
+        const std::string_view argument =
+            trim(m_sql.substr(word.offset + word.length, lineEnd - word.offset - word.length));
         if (argument.empty()) {
             return false;
         }

@@ -35,13 +35,13 @@ public:
     QueryService(session::SessionService& sessions, QueryHistoryStore* history);
 
     void execute(std::string_view sessionId, QueryRequest request, StatementCallback onStatement,
-                 Completion<QuerySummary> done);
+                 services::Completion<QuerySummary> done);
 
     /// Roda um arquivo .sql inteiro em streaming, com memória constante (§2.1): lê em blocos, divide e executa
     /// sentença a sentença, sem guardar linhas de resultado (só contagens e erros). `onStatement` recebe
     /// StatementResult sem `table`. Com stopOnError, para no primeiro erro.
     void runFile(std::string_view sessionId, std::filesystem::path file, bool stopOnError,
-                 StatementCallback onStatement, Completion<QuerySummary> done);
+                 StatementCallback onStatement, services::Completion<QuerySummary> done);
 
     void cancel(std::string_view sessionId);
 
@@ -50,7 +50,9 @@ private:
     using Body = std::function<void(Runner&)>;
 
     /// Roda `body` no worker da sessão, entrega os resultados na thread da UI e aplica os efeitos (DDL, USE).
-    void start(std::string_view sessionId, Body body, StatementCallback onStatement, Completion<QuerySummary> done);
+    /// `historyText` é o que vai para o histórico.
+    void start(std::string_view sessionId, Body body, StatementCallback onStatement,
+               services::Completion<QuerySummary> done, std::string historyText);
 
     session::SessionService* m_sessions;
     QueryHistoryStore* m_history;

@@ -7,7 +7,10 @@
   },
   "benchmarks_ms": {
     "BM_ObjectTreeLoad10k": 100,
-    "BM_ObjectTreeFilter10k": 50
+    "BM_ObjectTreeFilter10k": 50,
+    "BM_CompletionEverything10k": 10,
+    "BM_CompletionPrefix10k": 10,
+    "BM_CompletionAliasColumns10k": 10
   },
   "platforms": {
     "macos": {

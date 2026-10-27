@@ -25,8 +25,8 @@ enum class CompletionKind : std::uint8_t {
 };
 
 struct Completion {
-    std::string text;      ///< o que entra no editor
-    std::string detail;    ///< assinatura da função, tipo da coluna, tabela de origem…
+    std::string text;   ///< o que entra no editor
+    std::string detail; ///< assinatura da função, tipo da coluna, tabela de origem…
     CompletionKind kind{CompletionKind::Keyword};
 
     friend bool operator==(const Completion&, const Completion&) = default;

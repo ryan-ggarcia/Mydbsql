@@ -70,7 +70,8 @@ TEST(SqlFormatterTest, EmptyAndCommentOnlyInput) {
 }
 
 TEST(SqlFormatterTest, PostgresDollarQuotesAreUntouched) {
-    EXPECT_EQ(formatSql("select $$ from where $$::text", SqlSyntax::postgresql()), "SELECT\n    $$ from where $$::text;");
+    EXPECT_EQ(formatSql("select $$ from where $$::text", SqlSyntax::postgresql()),
+              "SELECT\n    $$ from where $$::text;");
 }
 
 } // namespace
