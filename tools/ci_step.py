@@ -50,7 +50,19 @@ def main() -> int:
         if "The following tests FAILED:" in lines:
             start = lines.index("The following tests FAILED:")
             failed = [line for line in lines[start:start + MAX_ERROR_LINES] if line.strip()]
-        errors = failed + [line for line in lines if ERROR_PATTERN.search(line)][:MAX_ERROR_LINES]
+            # O fim da saída de cada teste que falhou: num crash, mostra o último caso que rodou.
+            for name in re.findall(r"^\s*\d+ - (\S+)", "\n".join(failed), re.MULTILINE):
+                header = re.compile(rf"Test\s+#\d+: {re.escape(name)} .*\*\*\*")
+                for index, line in enumerate(lines):
+                    if header.search(line):
+                        block = []
+                        for output in lines[index + 1:]:
+                            if re.match(r"\s*(Start \d+:|\d+/\d+ Test\s+#)", output):
+                                break
+                            block.append(output)
+                        failed += [f"----- saída de {name} -----", *block[-MAX_TAIL_LINES:]]
+                        break
+        errors = failed +[line for line in lines if ERROR_PATTERN.search(line)][:MAX_ERROR_LINES]
         tail = lines[-MAX_TAIL_LINES:]
         message = "\n".join([*errors, "----- fim da saída -----", *tail])
         sys.stdout.flush()
