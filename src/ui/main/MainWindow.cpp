@@ -1,9 +1,16 @@
 #include "ui/main/MainWindow.hpp"
 
+#include "core/sql/SqlFormatter.hpp"
 #include "sdk/SessionEvents.hpp"
 #include "ui/common/ErrorText.hpp"
 #include "ui/common/Icons.hpp"
 #include "ui/common/QtText.hpp"
+#include "ui/dialogs/FindReplaceDialog.hpp"
+#include "ui/dialogs/QueryHistoryDialog.hpp"
+#include "ui/dialogs/SnippetsDialog.hpp"
+#include "ui/editors/EditorPreferences.hpp"
+#include "ui/editors/QueryTab.hpp"
+#include "ui/editors/SqlEditor.hpp"
 #include "ui/models/ObjectTreeFilter.hpp"
 #include "ui/models/ObjectTreeModel.hpp"
 #include "ui/panels/DatabasePanel.hpp"
@@ -11,10 +18,15 @@
 #include "ui/panels/LogPanel.hpp"
 
 #include <QAction>
+#include <QCloseEvent>
 #include <QColor>
 #include <QDockWidget>
+#include <QFile>
+#include <QFileDialog>
+#include <QFileInfo>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QInputDialog>
 #include <QKeySequence>
 #include <QLabel>
 #include <QLineEdit>
@@ -22,9 +34,12 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPointer>
+#include <QSaveFile>
 #include <QSplitter>
 #include <QStatusBar>
+#include <QTabBar>
 #include <QTabWidget>
+#include <QThreadPool>
 #include <QToolBar>
 #include <QToolButton>
 #include <QTreeView>
@@ -64,6 +79,9 @@ QString menuTitle(std::string_view id) {
     }
     if (id == sdk::menus::kHelp) {
         return MainWindow::tr("Aj&uda");
+    }
+    if (id == "query") {
+        return MainWindow::tr("&Query");
     }
     return toQt(id);
 }
@@ -115,6 +133,17 @@ QAction::MenuRole menuRoleFor(const sdk::CommandInfo& info) {
     }
 }
 
+constexpr qint64 kMaxEditorFileBytes = qint64{100} * 1024 * 1024;
+QString sqlFilter() {
+    return MainWindow::tr("Arquivos SQL (*.sql);;Todos os arquivos (*)");
+}
+
+/// Roda `work` no pool de threads do Qt e entrega a continuação que ele devolve na thread da UI: leitura e
+/// gravação de arquivos não rodam na thread da UI (§2.3).
+void inBackground(const services::Dispatcher& ui, std::function<std::function<void()>()> work) {
+    QThreadPool::globalInstance()->start([ui, task = std::move(work)] { ui(task()); });
+}
+
 } // namespace
 
 MainWindow::MainWindow(Dependencies dependencies, QWidget* parent)
@@ -142,6 +171,13 @@ MainWindow::MainWindow(Dependencies dependencies, QWidget* parent)
     for (const auto* session : m_deps.sessions->sessions()) {
         onSessionOpened(session->id());
     }
+    try {
+        m_deps.history->load();
+        m_deps.history->setKeepDays(EditorPreferences::load(*m_deps.settings).historyKeepDays);
+    } catch (const std::exception& error) {
+        qWarning("Histórico de queries ignorado: %s", error.what());
+    }
+    restoreQueryTabs();
     updateCommandStates();
 }
 
@@ -217,11 +253,26 @@ void MainWindow::buildLayout() {
             [this](const QString& database) { selectDatabase(m_hostPanel->sessionId(), toStd(database)); });
     connect(m_databasePanel, &DatabasePanel::objectActivated, this,
             [this](const core::model::ObjectRef& object) { selectObject(m_databasePanel->sessionId(), object); });
+    m_tabs->setTabsClosable(true);
+    for (const int fixed : {kHostTab, kDatabaseTab}) {
+        m_tabs->tabBar()->setTabButton(fixed, QTabBar::RightSide, nullptr);
+        m_tabs->tabBar()->setTabButton(fixed, QTabBar::LeftSide, nullptr);
+    }
     connect(m_tabs, &QTabWidget::currentChanged, this, [this](int tab) {
         if (tab == kHostTab) {
             m_hostPanel->refresh();
         }
+        updateCommandStates();
     });
+    connect(m_tabs, &QTabWidget::tabCloseRequested, this, [this](int index) {
+        if (auto* tab = qobject_cast<QueryTab*>(m_tabs->widget(index))) {
+            if (confirmDiscard({tab})) {
+                closeQueryTab(tab);
+                saveQueryTabs();
+            }
+        }
+    });
+    connect(m_tabs, &QTabWidget::tabBarDoubleClicked, this, &MainWindow::renameQueryTab);
 
     auto* splitter = new QSplitter(Qt::Horizontal, this);
     splitter->addWidget(treePane);
@@ -336,10 +387,21 @@ void MainWindow::subscribe() {
         events.subscribe<sdk::SessionOpened>([this](const auto& event) { onSessionOpened(event.sessionId); }));
     m_subscriptions.push_back(
         events.subscribe<sdk::SessionClosed>([this](const auto& event) { onSessionClosed(event.sessionId); }));
-    m_subscriptions.push_back(events.subscribe<sdk::ObjectsChanged>(
-        [this](const auto& event) { onObjectsChanged(event.sessionId, event.database); }));
+    m_subscriptions.push_back(events.subscribe<sdk::ObjectsChanged>([this](const auto& event) {
+        onObjectsChanged(event.sessionId, event.database);
+        for (QueryTab* tab : queryTabs()) {
+            if (tab->sessionId() == event.sessionId) {
+                tab->refreshCompletion();
+            }
+        }
+    }));
     m_subscriptions.push_back(events.subscribe<sdk::DatabaseChanged>([this](const auto& event) {
         statusBar()->showMessage(tr("%1: banco atual %2").arg(sessionName(event.sessionId), toQt(event.database)));
+        for (QueryTab* tab : queryTabs()) {
+            if (tab->sessionId() == event.sessionId) {
+                tab->refreshCompletion();
+            }
+        }
     }));
     m_subscriptions.push_back(events.subscribe<sdk::ConnectionStateChanged>([this](const auto& event) {
         statusBar()->showMessage(event.alive ? tr("%1: conexão restabelecida").arg(sessionName(event.sessionId))
@@ -355,6 +417,11 @@ void MainWindow::onSessionOpened(const std::string& sessionId) {
     const QColor color = QColor::fromString(toQt(session->session().color));
     m_model->addSession(sessionId, toQt(session->session().name), color);
     loadDatabases(sessionId);
+    for (QueryTab* tab : queryTabs()) {
+        if (tab->sessionId() == sessionId) {
+            tab->setSessionId(sessionId); // aba restaurada: a sessão dela abriu agora
+        }
+    }
     updateCommandStates();
 }
 
@@ -576,6 +643,345 @@ void MainWindow::showAbout() {
 
 void MainWindow::quit() {
     close();
+}
+
+// ---- Abas de query (sdk::IQueryWorkbench) ----
+
+QueryTab* MainWindow::activeQueryTab() const {
+    return qobject_cast<QueryTab*>(m_tabs->currentWidget());
+}
+
+std::vector<QueryTab*> MainWindow::queryTabs() const {
+    std::vector<QueryTab*> tabs;
+    for (int index = 0; index < m_tabs->count(); ++index) {
+        if (auto* tab = qobject_cast<QueryTab*>(m_tabs->widget(index))) {
+            tabs.push_back(tab);
+        }
+    }
+    return tabs;
+}
+
+QueryTab* MainWindow::addQueryTab(const services::query::QueryTabState& state) {
+    auto* tab = new QueryTab(QueryTab::Dependencies{.sessions = m_deps.sessions, .queries = m_deps.queries}, m_tabs);
+    ++m_queryCounter;
+    tab->setTitle(tr("Query %1").arg(m_queryCounter));
+    tab->setFilePath(toQt(state.file));
+    if (!state.title.empty()) {
+        tab->setTitle(toQt(state.title)); // o nome dado pelo usuário vale mais que o do arquivo
+    }
+    tab->editor().setPlainText(toQt(state.sql));
+    tab->editor().document()->setModified(false);
+    tab->setSessionId(state.sessionId);
+    const int index = m_tabs->addTab(tab, appIcon("query"), tab->displayTitle());
+    m_tabs->setTabToolTip(index, tab->filePath());
+    connect(tab, &QueryTab::titleChanged, this, [this, tab] { updateQueryTabTitle(tab); });
+    connect(tab, &QueryTab::runningChanged, this, [this] { updateCommandStates(); });
+    return tab;
+}
+
+void MainWindow::updateQueryTabTitle(QueryTab* tab) {
+    const int index = m_tabs->indexOf(tab);
+    if (index >= 0) {
+        m_tabs->setTabText(index, tab->displayTitle());
+        m_tabs->setTabToolTip(index, tab->filePath());
+    }
+}
+
+void MainWindow::closeQueryTab(QueryTab* tab) {
+    tab->cancel();
+    m_tabs->removeTab(m_tabs->indexOf(tab));
+    tab->deleteLater();
+    updateCommandStates();
+}
+
+bool MainWindow::confirmDiscard(const std::vector<QueryTab*>& tabs) {
+    const bool modified = std::ranges::any_of(tabs, [](const QueryTab* tab) {
+        return tab->editor().document()->isModified() && !tab->editor().document()->isEmpty();
+    });
+    return !modified ||
+           QMessageBox::question(this, windowTitle(),
+                                 tr("O texto alterado nas abas de query será perdido. Fechar mesmo assim?")) ==
+               QMessageBox::Yes;
+}
+
+void MainWindow::renameQueryTab(int index) {
+    auto* tab = qobject_cast<QueryTab*>(m_tabs->widget(index));
+    if (tab == nullptr) {
+        return;
+    }
+    bool ok = false;
+    const QString title =
+        QInputDialog::getText(this, tr("Renomear aba"), tr("Nome da aba:"), QLineEdit::Normal, tab->title(), &ok);
+    if (ok && !title.trimmed().isEmpty()) {
+        tab->setTitle(title.trimmed());
+    }
+}
+
+void MainWindow::ensureSession(QueryTab& tab) const {
+    if (m_deps.sessions->find(tab.sessionId()) == nullptr) {
+        std::string selected = selection().sessionId;
+        if (!selected.empty()) {
+            tab.setSessionId(std::move(selected));
+        }
+    }
+}
+
+void MainWindow::restoreQueryTabs() {
+    std::vector<services::query::QueryTabState> states;
+    try {
+        states = m_deps.queryTabs->load();
+    } catch (const std::exception& error) {
+        qWarning("Abas de query não restauradas: %s", error.what());
+    }
+    for (const auto& state : states) {
+        (void)addQueryTab(state);
+    }
+}
+
+void MainWindow::saveQueryTabs() const {
+    std::vector<services::query::QueryTabState> states;
+    for (const QueryTab* tab : queryTabs()) {
+        states.push_back(tab->state());
+    }
+    try {
+        m_deps.queryTabs->save(states);
+    } catch (const std::exception& error) {
+        qWarning("Abas de query não gravadas: %s", error.what());
+    }
+}
+
+void MainWindow::closeEvent(QCloseEvent* event) {
+    saveQueryTabs();
+    QMainWindow::closeEvent(event);
+}
+
+void MainWindow::newQueryTab() {
+    services::query::QueryTabState state;
+    state.sessionId = selection().sessionId;
+    QueryTab* tab = addQueryTab(state);
+    m_tabs->setCurrentWidget(tab);
+    tab->editor().setFocus();
+}
+
+bool MainWindow::hasActiveQuery() const {
+    return activeQueryTab() != nullptr;
+}
+
+bool MainWindow::queryRunning() const {
+    const QueryTab* tab = activeQueryTab();
+    return tab != nullptr && tab->running();
+}
+
+void MainWindow::runQuery(sdk::QueryScope scope, bool explain) {
+    if (QueryTab* tab = activeQueryTab()) {
+        ensureSession(*tab);
+        tab->run(scope, explain);
+    }
+}
+
+void MainWindow::cancelQuery() {
+    if (QueryTab* tab = activeQueryTab()) {
+        tab->cancel();
+    }
+}
+
+void MainWindow::openSqlFile() {
+    const QString file = QFileDialog::getOpenFileName(this, tr("Abrir arquivo SQL"), {}, sqlFilter());
+    if (!file.isEmpty()) {
+        openSqlFileAt(file);
+    }
+}
+
+void MainWindow::openSqlFileAt(const QString& file) {
+    QPointer<MainWindow> self(this);
+    inBackground(m_deps.dispatcher, [self, path = QString(file)]() -> std::function<void()> {
+        QFile input(path);
+        QString error;
+        QString text;
+        if (input.size() > kMaxEditorFileBytes) {
+            error = tr("O arquivo é grande demais para o editor; use \"Executar arquivo SQL\" para rodá-lo.");
+        } else if (!input.open(QIODevice::ReadOnly)) {
+            error = input.errorString();
+        } else {
+            text = QString::fromUtf8(input.readAll());
+            if (text.startsWith(QChar(0xFEFF))) {
+                text.remove(0, 1);
+            }
+            text.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+        }
+        return [window = self, opened = path, text, error] {
+            if (!window) {
+                return;
+            }
+            if (!error.isEmpty()) {
+                QMessageBox::warning(window, window->windowTitle(),
+                                     tr("Não foi possível abrir %1:\n%2").arg(opened, error));
+                return;
+            }
+            services::query::QueryTabState state;
+            state.sessionId = window->selection().sessionId;
+            state.file = toStd(opened);
+            state.sql = toStd(text);
+            QueryTab* tab = window->addQueryTab(state);
+            window->m_tabs->setCurrentWidget(tab);
+        };
+    });
+}
+
+void MainWindow::saveSqlFile(bool saveAs) {
+    QueryTab* tab = activeQueryTab();
+    if (tab == nullptr) {
+        return;
+    }
+    QString file = tab->filePath();
+    if (saveAs || file.isEmpty()) {
+        file = QFileDialog::getSaveFileName(this, tr("Salvar arquivo SQL"), file, sqlFilter());
+    }
+    if (!file.isEmpty()) {
+        saveQueryTabTo(tab, file);
+    }
+}
+
+void MainWindow::saveQueryTabTo(QueryTab* tab, const QString& file) {
+    QPointer<MainWindow> self(this);
+    QPointer<QueryTab> target(tab);
+    QByteArray bytes = tab->editor().toPlainText().toUtf8();
+    inBackground(m_deps.dispatcher, [self, target, path = QString(file), bytes]() -> std::function<void()> {
+        QSaveFile output(path);
+        QString error;
+        if (!output.open(QIODevice::WriteOnly) || output.write(bytes) != bytes.size() || !output.commit()) {
+            error = output.errorString();
+        }
+        return [window = self, saving = target, saved = path, error] {
+            if (!window || !saving) {
+                return;
+            }
+            if (!error.isEmpty()) {
+                QMessageBox::warning(window, window->windowTitle(),
+                                     tr("Não foi possível salvar %1:\n%2").arg(saved, error));
+                return;
+            }
+            saving->setFilePath(saved);
+            saving->editor().document()->setModified(false);
+            window->updateQueryTabTitle(saving);
+            window->saveQueryTabs();
+        };
+    });
+}
+
+void MainWindow::runSqlFile() {
+    const QString file = QFileDialog::getOpenFileName(this, tr("Executar arquivo SQL"), {}, sqlFilter());
+    if (file.isEmpty()) {
+        return;
+    }
+    if (activeQueryTab() == nullptr) {
+        newQueryTab();
+    }
+    QueryTab* tab = activeQueryTab();
+    ensureSession(*tab);
+    tab->runFile(toPath(file));
+}
+
+void MainWindow::formatQuery() {
+    QueryTab* tab = activeQueryTab();
+    if (tab == nullptr) {
+        return;
+    }
+    SqlEditor& editor = tab->editor();
+    QTextCursor cursor = editor.textCursor();
+    const QString source = cursor.hasSelection() ? editor.selectedSql() : editor.toPlainText();
+    if (!cursor.hasSelection()) {
+        cursor.select(QTextCursor::Document);
+    }
+    const std::string formatted = core::sql::formatSql(toStd(source), editor.syntax());
+    cursor.insertText(toQt(formatted)); // um passo só no desfazer
+    editor.setTextCursor(cursor);
+}
+
+void MainWindow::toggleComment() {
+    if (QueryTab* tab = activeQueryTab()) {
+        tab->editor().toggleComment();
+    }
+}
+
+void MainWindow::showFindReplace() {
+    if (m_findDialog) {
+        m_findDialog->raise();
+        m_findDialog->activateWindow();
+        return;
+    }
+    QPointer<MainWindow> self(this);
+    auto* dialog = new FindReplaceDialog(
+        [self]() -> SqlEditor* {
+            QueryTab* tab = self ? self->activeQueryTab() : nullptr;
+            return tab != nullptr ? &tab->editor() : nullptr;
+        },
+        *m_deps.settings, this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    m_findDialog = dialog;
+    dialog->show();
+}
+
+void MainWindow::insertIntoEditor(const QString& sql) {
+    if (activeQueryTab() == nullptr) {
+        newQueryTab();
+    }
+    SqlEditor& editor = activeQueryTab()->editor();
+    editor.textCursor().insertText(sql);
+    editor.setFocus();
+}
+
+void MainWindow::showQueryHistory() {
+    if (m_historyDialog) {
+        m_historyDialog->raise();
+        m_historyDialog->activateWindow();
+        return;
+    }
+    auto* dialog = new QueryHistoryDialog(
+        *m_deps.history, *m_deps.settings,
+        [this](const std::string& sessionId) {
+            const QString name = sessionName(sessionId);
+            return name.isEmpty() ? toQt(sessionId) : name;
+        },
+        this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    connect(dialog, &QueryHistoryDialog::sqlChosen, this, &MainWindow::insertIntoEditor);
+    m_historyDialog = dialog;
+    dialog->show();
+}
+
+void MainWindow::showSnippets() {
+    if (m_snippetsDialog) {
+        m_snippetsDialog->raise();
+        m_snippetsDialog->activateWindow();
+        return;
+    }
+    if (!m_snippetsLoaded) {
+        try {
+            m_deps.snippets->load();
+        } catch (const std::exception& error) {
+            QMessageBox::warning(this, windowTitle(),
+                                 tr("Não foi possível ler os snippets:\n%1").arg(errorText(error)));
+            return;
+        }
+        m_snippetsLoaded = true;
+    }
+    auto* dialog = new SnippetsDialog(*m_deps.snippets, this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    connect(dialog, &SnippetsDialog::sqlChosen, this, &MainWindow::insertIntoEditor);
+    m_snippetsDialog = dialog;
+    dialog->show();
+}
+
+void MainWindow::closeAllQueryTabs() {
+    const std::vector<QueryTab*> tabs = queryTabs();
+    if (tabs.empty() || !confirmDiscard(tabs)) {
+        return;
+    }
+    for (QueryTab* tab : tabs) {
+        closeQueryTab(tab);
+    }
+    saveQueryTabs();
 }
 
 } // namespace mydb::ui

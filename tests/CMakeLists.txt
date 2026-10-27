@@ -132,6 +132,18 @@ if(MYDB_BUILD_APP)
         TIMEOUT 120
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
+    add_executable(mydb_ui_editor_tests ui/SqlEditorTest.cpp)
+    set_target_properties(mydb_ui_editor_tests PROPERTIES AUTOMOC ON)
+    target_link_libraries(mydb_ui_editor_tests PRIVATE mydb::ui mydb::settings Qt6::Test)
+    target_include_directories(mydb_ui_editor_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_compile_definitions(mydb_ui_editor_tests PRIVATE QT_NO_KEYWORDS)
+    mydb_set_warnings(mydb_ui_editor_tests)
+    add_test(NAME ui.sql_editor COMMAND mydb_ui_editor_tests -platform offscreen)
+    set_tests_properties(ui.sql_editor PROPERTIES
+        LABELS ui
+        TIMEOUT 300
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
     add_test(NAME ui.measure_startup_smoke
         COMMAND mydbsql --measure-startup --settle-ms=0 -platform offscreen)
     set_tests_properties(ui.measure_startup_smoke PROPERTIES

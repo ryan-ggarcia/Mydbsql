@@ -10,19 +10,31 @@
 #include "support/FakeServer.hpp"
 #include "ui/common/Icons.hpp"
 #include "ui/common/QtDispatcher.hpp"
+#include "ui/dialogs/QueryHistoryDialog.hpp"
+#include "ui/dialogs/SnippetsDialog.hpp"
+#include "ui/editors/EditorPreferences.hpp"
+#include "ui/editors/QueryTab.hpp"
+#include "ui/editors/SqlEditor.hpp"
 #include "ui/models/ObjectTreeFilter.hpp"
 #include "ui/models/ObjectTreeModel.hpp"
 #include "ui/panels/LogPanel.hpp"
 
+#include <QAbstractItemView>
 #include <QAction>
 #include <QApplication>
+#include <QCompleter>
 #include <QDockWidget>
 #include <QLineEdit>
+#include <QListWidget>
+#include <QMenu>
 #include <QMenuBar>
 #include <QTabWidget>
+#include <QTableView>
 #include <QTest>
+#include <QTextBlock>
 #include <QToolButton>
 #include <QTreeView>
+#include <QTreeWidget>
 
 #include <algorithm>
 #include <memory>
@@ -63,7 +75,11 @@ private:
         mydb::services::log::LogBuffer log;
         QObject context;
         mydb::tests::FakeServer server;
+        mydb::services::query::QueryHistoryStore history{settings};
+        mydb::services::query::SnippetStore snippets{settings};
+        mydb::services::query::QueryTabsStore queryTabs{settings};
         mydb::services::session::SessionService sessions{modules.events(), mydb::ui::qtDispatcher(&context), log};
+        mydb::services::query::QueryService queries{sessions, &history};
         int managerCalls = 0;
         std::unique_ptr<mydb::ui::MainWindow> window;
 
@@ -72,22 +88,32 @@ private:
             server.objects["app"] = {
                 object("users", ObjectType::Table, 2048), object("orders", ObjectType::Table, 1024),
                 object("active_users", ObjectType::View), object("cleanup", ObjectType::Procedure)};
-            window = std::make_unique<mydb::ui::MainWindow>(
-                mydb::ui::MainWindow::Dependencies{.sessions = &sessions,
-                                                   .favorites = &favorites,
-                                                   .log = &log,
-                                                   .events = &modules.events(),
-                                                   .commands = &modules.commands(),
-                                                   .dispatcher = mydb::ui::qtDispatcher(&context),
-                                                   .showSessionManager = [this] { ++managerCalls; },
-                                                   .version = QStringLiteral("teste")});
-            window->show();
+            createWindow();
         }
         Fixture(const Fixture&) = delete;
         Fixture& operator=(const Fixture&) = delete;
         Fixture(Fixture&&) = delete;
         Fixture& operator=(Fixture&&) = delete;
         ~Fixture() { window.reset(); }
+
+        void createWindow() {
+            window.reset();
+            window = std::make_unique<mydb::ui::MainWindow>(
+                mydb::ui::MainWindow::Dependencies{.sessions = &sessions,
+                                                   .favorites = &favorites,
+                                                   .log = &log,
+                                                   .events = &modules.events(),
+                                                   .commands = &modules.commands(),
+                                                   .queries = &queries,
+                                                   .history = &history,
+                                                   .snippets = &snippets,
+                                                   .queryTabs = &queryTabs,
+                                                   .settings = &settings,
+                                                   .dispatcher = mydb::ui::qtDispatcher(&context),
+                                                   .showSessionManager = [this] { ++managerCalls; },
+                                                   .version = QStringLiteral("teste")});
+            window->show();
+        }
 
         void open(const std::string& id = "s1") {
             mydb::services::session::Session session;
@@ -109,6 +135,17 @@ private:
         void expand(const std::string& database) {
             const QModelIndex index = model().databaseIndex("s1", database);
             window->treeView().expand(viewIndex(index));
+        }
+        [[nodiscard]] mydb::ui::QueryTab& newQueryTab(const QString& sql) {
+            trigger("query.new");
+            mydb::ui::QueryTab* tab = window->activeQueryTab();
+            Q_ASSERT(tab != nullptr);
+            tab->editor().setPlainText(sql);
+            return *tab;
+        }
+        [[nodiscard]] std::string lastExecuted() {
+            const std::scoped_lock lock(server.mutex);
+            return server.executed.empty() ? std::string() : server.executed.back();
         }
         void trigger(std::string_view command) {
             QAction* action = window->commandAction(command);
@@ -288,6 +325,163 @@ private Q_SLOTS:
         auto* hostTabs = tabs->widget(0)->findChild<QTabWidget*>();
         QVERIFY(hostTabs != nullptr);
         QVERIFY(!hostTabs->isTabEnabled(1)); // variáveis: a conexão falsa não tem IServerAdmin
+    }
+
+    void queryCommandsComeFromTheRegistry() {
+        Fixture f;
+        auto* query = f.window->menuBar()->findChild<QMenu*>(QStringLiteral("queryMenu"));
+        QVERIFY(query != nullptr);
+        QVERIFY(query->actions().contains(f.window->commandAction("query.run")));
+        QCOMPARE(f.window->commandAction("query.run")->shortcut(), QKeySequence(Qt::Key_F9));
+        QCOMPARE(f.window->commandAction("query.runSelection")->shortcut(), QKeySequence(Qt::CTRL | Qt::Key_F9));
+        QCOMPARE(f.window->commandAction("query.runCurrent")->shortcut(), QKeySequence(Qt::SHIFT | Qt::Key_F9));
+        QCOMPARE(f.window->commandAction("query.find")->shortcut(), QKeySequence(QKeySequence::Find));
+        QVERIFY(!f.window->commandAction("query.run")->isEnabled()); // nenhuma aba de query
+        f.trigger("query.new");
+        QVERIFY(f.window->hasActiveQuery());
+        QVERIFY(f.window->commandAction("query.run")->isEnabled());
+        QVERIFY(!f.window->commandAction("query.cancel")->isEnabled());
+    }
+
+    void runningShowsResultsMetricsAndTheErrorLine() {
+        Fixture f;
+        f.server.script = [](std::string_view sql) {
+            mydb::tests::FakeResult result;
+            if (sql.starts_with("SELECT")) {
+                result.columns = {mydb::tests::fakeColumn("id"), mydb::tests::fakeColumn("name")};
+                result.rows = {{"1", "ana"}, {"2", std::nullopt}};
+            } else if (sql.starts_with("BROKEN")) {
+                result.error = "syntax error";
+            } else {
+                result.rowsAffected = 3;
+            }
+            return std::vector<mydb::tests::FakeResult>{result};
+        };
+        f.open();
+        mydb::ui::QueryTab& tab =
+            f.newQueryTab(QStringLiteral("SELECT id, name FROM users;\nUPDATE users SET x = 1;\nBROKEN;"));
+        QCOMPARE(tab.sessionId(), std::string("s1"));
+        f.trigger("query.run");
+        QTRY_VERIFY(!tab.running());
+        QCOMPARE(tab.results().count(), 2); // mensagens + um resultado
+        auto* view = qobject_cast<QTableView*>(tab.results().widget(1));
+        QVERIFY(view != nullptr);
+        QCOMPARE(view->model()->rowCount(), 2);
+        QCOMPARE(view->model()->index(1, 1).data().toString(), QStringLiteral("NULL"));
+        QVERIFY(tab.messages().contains(QStringLiteral("Linha 2: 3 linha(s) afetada(s)")));
+        QVERIFY(tab.messages().contains(QStringLiteral("Erro na linha 3: syntax error")));
+        QVERIFY(tab.metrics().contains(QStringLiteral("Erros: 1")));
+        QCOMPARE(tab.editor().textCursor().blockNumber(), 2); // o cursor vai para a linha do erro
+        QVERIFY(!f.history.search("UPDATE users").empty());
+        QVERIFY(f.window->commandAction("query.run")->isEnabled());
+    }
+
+    void runsTheSelectionTheCurrentStatementAndExplain() {
+        Fixture f;
+        f.open();
+        mydb::ui::QueryTab& tab = f.newQueryTab(QStringLiteral("SELECT 1;\nSELECT 2;"));
+        QTextCursor cursor(tab.editor().document()->findBlockByNumber(1));
+        tab.editor().setTextCursor(cursor);
+        f.trigger("query.runCurrent");
+        QTRY_VERIFY(!tab.running());
+        QCOMPARE(f.lastExecuted(), std::string("SELECT 2"));
+        f.trigger("query.explain");
+        QTRY_VERIFY(!tab.running());
+        QVERIFY(f.lastExecuted().starts_with("EXPLAIN"));
+        cursor.setPosition(0);
+        cursor.setPosition(8, QTextCursor::KeepAnchor);
+        tab.editor().setTextCursor(cursor);
+        f.trigger("query.runSelection");
+        QTRY_VERIFY(!tab.running());
+        QCOMPARE(f.lastExecuted(), std::string("SELECT 1"));
+    }
+
+    void editorCompletesWithTheSessionMetadata() {
+        Fixture f;
+        f.open();
+        mydb::ui::QueryTab& tab = f.newQueryTab(QStringLiteral("SELECT * FROM users u WHERE u.id = 1 AND us"));
+        mydb::ui::SqlEditor& editor = tab.editor();
+        QTextCursor cursor = editor.textCursor();
+        cursor.movePosition(QTextCursor::End);
+        editor.setTextCursor(cursor);
+        // O índice é montado no worker da sessão; até ele chegar, o popup não abre.
+        QTRY_VERIFY((editor.showCompletion(), editor.completer()->popup()->isVisible()));
+        QStringList texts;
+        for (int row = 0; row < editor.completer()->completionModel()->rowCount(); ++row) {
+            texts << editor.completer()->completionModel()->index(row, 0).data().toString();
+        }
+        QVERIFY(texts.contains(QStringLiteral("users")));
+        QTRY_VERIFY(f.server.tableCalls.load() > 0); // as colunas de "users" são pedidas sob demanda
+    }
+
+    void queryTabsAreRestoredOnReopen() {
+        Fixture f;
+        f.open();
+        mydb::ui::QueryTab& tab = f.newQueryTab(QStringLiteral("SELECT 42"));
+        tab.setTitle(QStringLiteral("minha"));
+        f.window->close();
+        f.createWindow();
+        const auto tabs = f.window->queryTabs();
+        QCOMPARE(tabs.size(), std::size_t{1});
+        QCOMPARE(tabs.front()->title(), QStringLiteral("minha"));
+        QCOMPARE(tabs.front()->editor().toPlainText(), QStringLiteral("SELECT 42"));
+        QCOMPARE(tabs.front()->sessionId(), std::string("s1"));
+        f.trigger("query.closeAll");
+        QVERIFY(f.window->queryTabs().empty());
+        QVERIFY(f.queryTabs.load().empty());
+    }
+
+    void formatAndCommentActOnTheActiveEditor() {
+        Fixture f;
+        mydb::ui::QueryTab& tab = f.newQueryTab(QStringLiteral("select a from t"));
+        f.trigger("query.format");
+        QVERIFY(tab.editor().toPlainText().contains(QStringLiteral("SELECT")));
+        QVERIFY(tab.editor().toPlainText().contains(QStringLiteral("FROM")));
+        tab.editor().selectAll();
+        f.trigger("query.comment");
+        QVERIFY(tab.editor().toPlainText().startsWith(QStringLiteral("-- ")));
+    }
+
+    void historySnippetsAndFindDialogsAreDestroyedOnClose() {
+        Fixture f;
+        f.open();
+        mydb::ui::QueryTab& tab = f.newQueryTab(QStringLiteral("SELECT 1"));
+        f.trigger("query.run");
+        QTRY_VERIFY(!tab.running());
+        tab.editor().clear();
+
+        f.trigger("query.history");
+        auto* history = f.window->findChild<mydb::ui::QueryHistoryDialog*>();
+        QVERIFY(history != nullptr);
+        QCOMPARE(history->list().topLevelItemCount(), 1);
+        history->list().setCurrentItem(history->list().topLevelItem(0));
+        Q_EMIT history->list().itemActivated(history->list().topLevelItem(0), 0);
+        QCOMPARE(tab.editor().toPlainText(), QStringLiteral("SELECT 1"));
+        history->setKeepDays(7);
+        QCOMPARE(mydb::ui::EditorPreferences::load(f.settings).historyKeepDays, 7);
+        history->clearHistory();
+        QCOMPARE(history->list().topLevelItemCount(), 0);
+        const QPointer<QDialog> historyGuard(history);
+        history->close();
+        QTRY_VERIFY(historyGuard.isNull());
+
+        tab.editor().clear();
+        f.trigger("query.snippets");
+        auto* snippets = f.window->findChild<mydb::ui::SnippetsDialog*>();
+        QVERIFY(snippets != nullptr);
+        QVERIFY(snippets->saveCurrent(QStringLiteral("contar"), QStringLiteral("SELECT COUNT(*) FROM t")));
+        QCOMPARE(f.snippets.snippets().size(), std::size_t{1});
+        snippets->list().setCurrentRow(0);
+        Q_EMIT snippets->list().itemActivated(snippets->list().item(0));
+        QCOMPARE(tab.editor().toPlainText(), QStringLiteral("SELECT COUNT(*) FROM t"));
+        const QPointer<QDialog> snippetsGuard(snippets);
+        snippets->close();
+        QTRY_VERIFY(snippetsGuard.isNull());
+
+        f.trigger("query.find");
+        QVERIFY(f.window->findDialog() != nullptr);
+        f.window->findDialog()->close();
+        QTRY_VERIFY(f.window->findDialog() == nullptr);
     }
 };
 

@@ -12,6 +12,9 @@
 #include "infra/platform/SystemCredentialStore.hpp"
 #include "infra/settings/JsonSettingsStore.hpp"
 #include "services/log/LogBuffer.hpp"
+#include "services/query/QueryDocuments.hpp"
+#include "services/query/QueryHistoryStore.hpp"
+#include "services/query/QueryService.hpp"
 #include "services/session/FavoritesStore.hpp"
 #include "services/session/SessionConnector.hpp"
 #include "services/session/SessionRepository.hpp"
@@ -102,7 +105,11 @@ int run(int argc, char** argv, std::chrono::steady_clock::time_point startedAt) 
         mydb::services::log::LogBuffer log;
         QObject dispatchContext;
         const mydb::services::Dispatcher dispatcher = mydb::ui::qtDispatcher(&dispatchContext);
+        mydb::services::query::QueryHistoryStore history(settings);
+        mydb::services::query::SnippetStore snippets(settings);
+        mydb::services::query::QueryTabsStore queryTabs(settings);
         session::SessionService sessions(modules.events(), dispatcher, log);
+        mydb::services::query::QueryService queries(sessions, &history);
         std::unique_ptr<mydb::ui::MainWindow> mainWindow;
 
         std::string loadError;
@@ -127,6 +134,11 @@ int run(int argc, char** argv, std::chrono::steady_clock::time_point startedAt) 
                                                            .log = &log,
                                                            .events = &modules.events(),
                                                            .commands = &modules.commands(),
+                                                           .queries = &queries,
+                                                           .history = &history,
+                                                           .snippets = &snippets,
+                                                           .queryTabs = &queryTabs,
+                                                           .settings = &settings,
                                                            .dispatcher = dispatcher,
                                                            .showSessionManager = showSessionManager,
                                                            .version = QStringLiteral(MYDB_VERSION)});

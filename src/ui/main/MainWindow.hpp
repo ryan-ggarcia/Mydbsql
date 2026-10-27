@@ -1,13 +1,19 @@
 #pragma once
 
+#include "core/interfaces/ISettingsStore.hpp"
 #include "sdk/EventBus.hpp"
 #include "sdk/ICommand.hpp"
 #include "services/common/Dispatcher.hpp"
 #include "services/log/LogBuffer.hpp"
+#include "services/query/QueryDocuments.hpp"
+#include "services/query/QueryHistoryStore.hpp"
+#include "services/query/QueryService.hpp"
 #include "services/session/FavoritesStore.hpp"
 #include "services/session/SessionService.hpp"
 
+#include <QDialog>
 #include <QMainWindow>
+#include <QPointer>
 
 #include <functional>
 #include <memory>
@@ -29,13 +35,15 @@ namespace mydb::ui {
 class DatabasePanel;
 class HostPanel;
 class LogPanel;
+class QueryTab;
 class ObjectTreeFilter;
 class ObjectTreeModel;
 
-/// Janela principal (CLAUDE.md §5, Fase 4): árvore de objetos à esquerda, abas à direita e log embaixo. Criada
-/// só depois da primeira conexão (§1.4). Menus, barra de ferramentas e menu de contexto da árvore vêm do
-/// CommandRegistry; a janela é o IWorkbench que os comandos enxergam.
-class MainWindow final : public QMainWindow, public sdk::IWorkbench {
+/// Janela principal (CLAUDE.md §5, Fases 4 e 5): árvore de objetos à esquerda, abas à direita (Host, Banco e as
+/// abas de query) e log embaixo. Criada só depois da primeira conexão (§1.4). Menus, barra de ferramentas e menu
+/// de contexto da árvore vêm do CommandRegistry; a janela é o IWorkbench (e o IQueryWorkbench) que os comandos
+/// enxergam.
+class MainWindow final : public QMainWindow, public sdk::IWorkbench, public sdk::IQueryWorkbench {
     Q_OBJECT
 
 public:
@@ -46,6 +54,11 @@ public:
         services::log::LogBuffer* log{nullptr};
         sdk::EventBus* events{nullptr};
         const sdk::CommandRegistry* commands{nullptr};
+        services::query::QueryService* queries{nullptr};
+        services::query::QueryHistoryStore* history{nullptr};
+        services::query::SnippetStore* snippets{nullptr};
+        services::query::QueryTabsStore* queryTabs{nullptr};
+        core::ISettingsStore* settings{nullptr};
         services::Dispatcher dispatcher;
         std::function<void()> showSessionManager;
         QString version;
@@ -69,8 +82,31 @@ public:
     void setFavorite(const sdk::Selection& scope, bool favorite) override;
     [[nodiscard]] bool panelVisible(sdk::Panel panel) const override;
     void setPanelVisible(sdk::Panel panel, bool visible) override;
+    [[nodiscard]] sdk::IQueryWorkbench& queries() override { return *this; }
+    [[nodiscard]] const sdk::IQueryWorkbench& queries() const override { return *this; }
     void showAbout() override;
     void quit() override;
+
+    // sdk::IQueryWorkbench
+    void newQueryTab() override;
+    [[nodiscard]] bool hasActiveQuery() const override;
+    [[nodiscard]] bool queryRunning() const override;
+    void runQuery(sdk::QueryScope scope, bool explain) override;
+    void cancelQuery() override;
+    void openSqlFile() override;
+    void saveSqlFile(bool saveAs) override;
+    void runSqlFile() override;
+    void formatQuery() override;
+    void toggleComment() override;
+    void showFindReplace() override;
+    void showQueryHistory() override;
+    void showSnippets() override;
+    void closeAllQueryTabs() override;
+
+    /// Abre um arquivo .sql numa aba nova (a leitura é feita fora da thread da UI).
+    void openSqlFileAt(const QString& file);
+    /// Grava a aba em `file` (fora da thread da UI).
+    void saveQueryTabTo(QueryTab* tab, const QString& file);
 
     // Para os testes de UI.
     [[nodiscard]] ObjectTreeModel& treeModel() const noexcept { return *m_model; }
@@ -78,6 +114,13 @@ public:
     [[nodiscard]] QTreeView& treeView() const noexcept { return *m_tree; }
     [[nodiscard]] QAction* commandAction(std::string_view commandId) const;
     [[nodiscard]] LogPanel& logPanel() const noexcept { return *m_logPanel; }
+    [[nodiscard]] QueryTab* activeQueryTab() const;
+    [[nodiscard]] std::vector<QueryTab*> queryTabs() const;
+    [[nodiscard]] QTabWidget& tabs() const noexcept { return *m_tabs; }
+    [[nodiscard]] QDialog* findDialog() const noexcept { return m_findDialog; }
+
+protected:
+    void closeEvent(QCloseEvent* event) override;
 
 private:
     struct CommandEntry {
@@ -102,6 +145,16 @@ private:
     void selectDatabase(const std::string& sessionId, const std::string& database);
     void selectObject(const std::string& sessionId, const core::model::ObjectRef& object);
     [[nodiscard]] QString sessionName(const std::string& sessionId) const;
+    QueryTab* addQueryTab(const services::query::QueryTabState& state);
+    void closeQueryTab(QueryTab* tab);
+    void renameQueryTab(int index);
+    void updateQueryTabTitle(QueryTab* tab);
+    /// A aba usa a sessão selecionada na árvore se a dela não estiver aberta.
+    void ensureSession(QueryTab& tab) const;
+    void restoreQueryTabs();
+    void saveQueryTabs() const;
+    void insertIntoEditor(const QString& sql);
+    [[nodiscard]] bool confirmDiscard(const std::vector<QueryTab*>& tabs);
 
     Dependencies m_deps;
     std::vector<CommandEntry> m_commands;
@@ -120,6 +173,11 @@ private:
     QDockWidget* m_logDock{nullptr};
     LogPanel* m_logPanel{nullptr};
     QLabel* m_statusServer{nullptr};
+    int m_queryCounter{0};
+    bool m_snippetsLoaded{false};
+    QPointer<QDialog> m_findDialog;
+    QPointer<QDialog> m_historyDialog;
+    QPointer<QDialog> m_snippetsDialog;
 };
 
 } // namespace mydb::ui

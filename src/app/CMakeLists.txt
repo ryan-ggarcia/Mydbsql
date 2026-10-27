@@ -6,7 +6,7 @@ add_library(mydb_app_support STATIC
     StartupReport.cpp
 )
 add_library(mydb::app_support ALIAS mydb_app_support)
-target_link_libraries(mydb_app_support PUBLIC mydb::core mydb::sdk mydb::platform PRIVATE mydb_module_workbench)
+target_link_libraries(mydb_app_support PUBLIC mydb::core mydb::sdk mydb::platform PRIVATE mydb_module_workbench mydb_module_query)
 mydb_set_warnings(mydb_app_support)
 
 if(NOT MYDB_BUILD_APP)
@@ -31,6 +31,7 @@ target_link_libraries(mydbsql PRIVATE
     mydb::ui
     mydb::settings
     mydb::services_session
+    mydb::services_query
     Qt6::Widgets)
 target_compile_definitions(mydbsql PRIVATE
     QT_NO_CAST_FROM_ASCII QT_NO_KEYWORDS
