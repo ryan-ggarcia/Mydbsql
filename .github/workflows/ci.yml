@@ -53,6 +53,8 @@ jobs:
         if: runner.os == 'Windows'
       - run: python tools/ci_step.py -- cmake --preset debug
       - run: python tools/ci_step.py -- cmake --build --preset debug
+      - run: sudo apt-get install -y --no-install-recommends gdb
+        if: runner.os == 'Linux'
       - run: python tools/ci_step.py -- ctest --preset debug
 
   sanitizers:

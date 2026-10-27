@@ -60,7 +60,10 @@ def main() -> int:
                             if re.match(r"\s*(Start \d+:|\d+/\d+ Test\s+#)", output):
                                 break
                             block.append(output)
-                        failed += [f"----- saída de {name} -----", *block[-MAX_TAIL_LINES:]]
+                        # Um crash do Qt Test traz a pilha (via gdb) depois de "Received signal".
+                        crash = next((i for i, text in enumerate(block) if "Received signal" in text), None)
+                        shown = block[max(0, crash - 3):crash + 50] if crash is not None else block[-MAX_TAIL_LINES:]
+                        failed += [f"----- saída de {name} -----", *shown]
                         break
         errors = failed +[line for line in lines if ERROR_PATTERN.search(line)][:MAX_ERROR_LINES]
         tail = lines[-MAX_TAIL_LINES:]
