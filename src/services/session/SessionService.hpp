@@ -22,15 +22,18 @@ namespace mydb::services::session {
 /// O que um trabalho recebe na thread do worker da sessão.
 class WorkContext {
 public:
-    WorkContext(core::IConnection& connection, CachedMetadataProvider& metadata) noexcept
-        : m_connection(&connection), m_metadata(&metadata) {}
+    WorkContext(core::IConnection& connection, CachedMetadataProvider& metadata, log::SessionLogger& logger) noexcept
+        : m_connection(&connection), m_metadata(&metadata), m_logger(&logger) {}
 
     [[nodiscard]] core::IConnection& connection() const noexcept { return *m_connection; }
     [[nodiscard]] CachedMetadataProvider& metadata() const noexcept { return *m_metadata; }
+    /// O logger que a conexão usa (para marcar o SQL do usuário com setUserSql).
+    [[nodiscard]] log::SessionLogger& logger() const noexcept { return *m_logger; }
 
 private:
     core::IConnection* m_connection;
     CachedMetadataProvider* m_metadata;
+    log::SessionLogger* m_logger;
 };
 
 /// Uma sessão aberta. Os campos são lidos e alterados só na thread da UI.
@@ -98,6 +101,11 @@ public:
     void objects(std::string_view sessionId, std::string database, Completion<std::vector<core::model::DbObject>> done);
     /// Em caso de sucesso, publica DatabaseChanged antes de chamar `done`.
     void useDatabase(std::string_view sessionId, const std::string& database, Completion<Done> done);
+    /// O banco atual já mudou no servidor (ex.: "USE x" no editor): guarda o novo e publica DatabaseChanged.
+    void setCurrentDatabase(std::string_view sessionId, std::string database);
+
+    /// Leva callbacks à thread da UI, para trabalhos que entregam resultados antes do fim.
+    [[nodiscard]] const Dispatcher& dispatcher() const noexcept { return m_dispatcher; }
 
     /// Descarta o cache afetado e publica ObjectsChanged. `database` vazio: o servidor inteiro.
     void refresh(std::string_view sessionId, std::string database = {},

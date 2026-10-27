@@ -2,6 +2,7 @@
 
 #include "core/interfaces/IQueryLogger.hpp"
 
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -10,6 +11,7 @@
 #include <mutex>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -61,9 +63,14 @@ public:
 
     void log(core::LogCategory category, std::string_view text) noexcept override;
 
+    /// Enquanto ligado, o SQL que a thread que ligou envia entra como UserSql em vez de Sql (o SQL digitado
+    /// aparece uma vez, na categoria certa). As outras threads, como a do cancelamento, não mudam.
+    void setUserSql(bool on) noexcept;
+
 private:
     LogBuffer* m_buffer;
     std::string m_sessionId;
+    std::atomic<std::thread::id> m_userThread;
 };
 
 } // namespace mydb::services::log

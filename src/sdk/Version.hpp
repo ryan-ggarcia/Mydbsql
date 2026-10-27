@@ -17,7 +17,7 @@ struct Version {
 
 /// Versão da API pública do sdk/. O major muda quando algo deixa de ser compatível (ex.: um método virtual
 /// novo no ModuleContext); o minor, quando só há acréscimos que módulos antigos não usam.
-inline constexpr Version kApiVersion{.major = 2, .minor = 0};
+inline constexpr Version kApiVersion{.major = 3, .minor = 0};
 
 /// Um módulo compilado contra `module` roda no host `host` se o major for igual e o minor não for maior.
 [[nodiscard]] constexpr bool isCompatible(Version host, Version module) noexcept {

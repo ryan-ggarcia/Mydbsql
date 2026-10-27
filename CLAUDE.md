@@ -306,7 +306,7 @@ As metas são revisadas a cada fase (§5). Uma regressão maior que **10%** em r
 3. **Introspecção em lote:** uma consulta por banco (`information_schema`/`pg_catalog`) traz colunas, índices e FKs de todas as tabelas; nunca uma consulta por tabela. O `CREATE` dos objetos é buscado em lote quando vários forem precisos (o HeidiSQL faz algo parecido com `PrefetchCreateCode`).
 4. **Cache de metadados com invalidação seletiva:** um DDL executado invalida só os objetos afetados.
 5. **Autocomplete** usa um índice em memória construído em segundo plano (vetor ordenado + busca por prefixo) e responde em ≤ 10 ms.
-6. **Realce de sintaxe incremental** (lexer do QScintilla) e parse do SQL só na região visível ou alterada.
+6. **Realce de sintaxe incremental** (`QSyntaxHighlighter` sobre o `SqlTokenizer`, por bloco) e parse do SQL só na região visível ou alterada.
 7. **Zero cópias desnecessárias:** `std::string_view`/`std::span` nas leituras, semântica de movimento, `reserve()` em laços conhecidos. A conversão para `QString` acontece só na hora de desenhar a célula.
 8. **Build release:** `-O2`, LTO e `-fvisibility=hidden`; PGO opcional no pacote final.
 9. **Medir antes de otimizar:** benchmarks em `bench/` (Google Benchmark) para o splitter, o buffer de resultados, os exportadores e o parse de metadados.
@@ -430,7 +430,7 @@ Outros sistemas (FreeBSD, por exemplo) são "melhor esforço": devem compilar se
 | Dependências | vcpkg (manifest `vcpkg.json`, baseline em `vcpkg-configuration.json`); o Qt vem dos binários oficiais via `tools/fetch_qt.py` (ADR-0006) | Reprodutível em Linux, Windows e macOS |
 | UI | **Qt 6 Widgets** (`QTreeView`/`QTableView` + models próprios) | Maduro, multiplataforma; equivale à variante Qt6 do HeidiSQL |
 | Ícones | SVGs próprios em `resources/icons/`, lidos pelo plugin de imagens do **QtSvg** sob demanda (ADR-0012) | Nítidos em HiDPI e no tema do sistema, sem custo na inicialização |
-| Editor SQL | **QScintilla** (ou KSyntaxHighlighting + QPlainTextEdit) | Realce, dobra, autocomplete |
+| Editor SQL | **`QPlainTextEdit` próprio** com realce pelo `SqlTokenizer` (ADR-0013) | Sem dependência nova; o QScintilla é GPL-3 e o pacote do vcpkg compila o Qt |
 | MySQL/MariaDB | libmariadb (Connector/C) | API C estável, múltiplos resultados, `mysql_kill`/thread id |
 | PostgreSQL | libpq | Oficial; `PQcancel` para cancelar |
 | SQLite | sqlite3 (SQLCipher opcional) | — |
@@ -447,7 +447,7 @@ Outros sistemas (FreeBSD, por exemplo) são "melhor esforço": devem compilar se
 | CI | GitHub Actions: Linux (x86-64 + ARM64), Windows (MSVC), macOS (arm64/universal) | Compatibilidade garantida a cada PR (§2.6) |
 | i18n | Qt Linguist (`.ts`/`.qm`) | — |
 
-> As escolhas de UI (Qt 6) e de editor (QScintilla) são decisões de projeto, não observações do HeidiSQL. Para mudá-las, altere esta seção primeiro. Qualquer dependência nova passa pelo crivo da §2.2 (regra 3: ADR com custo medido).
+> As escolhas de UI (Qt 6) e de editor (`QPlainTextEdit` próprio, ADR-0013) são decisões de projeto, não observações do HeidiSQL. Para mudá-las, altere esta seção primeiro. Qualquer dependência nova passa pelo crivo da §2.2 (regra 3: ADR com custo medido).
 
 ---
 
@@ -694,15 +694,15 @@ A partir da Fase 1, toda funcionalidade entra como **módulo** (§2.4). Se uma t
 - **Pronto quando:** árvore com 10 mil tabelas carrega em ≤ 500 ms e filtra em ≤ 50 ms; a UI nunca congela durante a introspecção. *(Implementada em 2026-10-16: UI ~8 ms para carregar e ~6 ms para filtrar; MySQL ~140–190 ms; MariaDB ~3 s, aceito e documentado na §2.1. Falta a CI.)*
 
 ### Fase 5 — Editor de query
-- [ ] `SqlEditor` (QScintilla): realce por dialeto, dobra de código, números de linha, localizar/substituir, comentar/descomentar, mover linhas, word wrap.
+- [ ] `SqlEditor` (`QPlainTextEdit`, ADR-0013): realce por dialeto, dobra de código, números de linha, localizar/substituir, comentar/descomentar, mover linhas, word wrap.
 - [ ] Autocomplete: palavras-chave, funções (catálogo próprio por dialeto, em JSON em `resources/`), bancos, tabelas, colunas e aliases.
 - [ ] Execução: tudo, seleção, query atual; lote de uma vez × query a query; parar em erro; cancelar; EXPLAIN.
 - [ ] Múltiplas abas de query (renomear, fechar todas, restaurar ao reabrir); várias abas de resultado por execução.
-- [ ] Snippets, salvar/carregar `.sql`, rodar arquivo SQL grande em streaming, reformatar SQL, ajuda SQL contextual.
+- [ ] Snippets, salvar/carregar `.sql`, rodar arquivo SQL grande em streaming, reformatar SQL.
 - [ ] Métricas exibidas: linhas, tempo do servidor e tempo de rede, warnings.
 - [ ] **Histórico de queries** persistente (SQLite local ou JSON Lines), com retenção em dias, busca e "limpar histórico" (encontrado no binário, §1.5).
-- [ ] Histórico de localizar/substituir; esquemas de cores do editor.
-- [ ] Módulos opcionais: pesquisa na web do termo selecionado (motor configurável) e formatador online (*opt-in*; o padrão é o formatador local).
+- [ ] Histórico de localizar/substituir.
+- *Adiados para a Fase 12 (decisão de 2026-10-21): esquemas de cores do editor, ajuda SQL contextual, pesquisa na web do termo selecionado e formatador online.*
 - **Pronto quando:** autocomplete responde em ≤ 10 ms e digitar num arquivo de 50 mil linhas não engasga.
 
 ### Fase 6 — Grade de dados e edição
@@ -751,6 +751,7 @@ A partir da Fase 1, toda funcionalidade entra como **módulo** (§2.4). Se uma t
 - [ ] MSSQL (FreeTDS) e Firebird (fbclient) como drivers extras.
 - [ ] Empacotamento: AppImage/Flatpak, `.deb`, `.rpm`, PKGBUILD (AUR); MSI (WiX) + `.zip` portátil no Windows; `.dmg` universal assinado e notarizado no macOS (§2.6).
 - [ ] Documentação de usuário.
+- [ ] Vindos da Fase 5: esquemas de cores do editor, ajuda SQL contextual, pesquisa na web do termo selecionado (motor configurável) e formatador online (*opt-in*, módulo opcional; o padrão é o formatador local).
 
 ### Fase 13 — Modelagem visual de dados (EER), o diferencial sobre o HeidiSQL
 Referência de comportamento: MySQL Workbench (§1.6). Depende das Fases 7 (DDL e `AlterTableBuilder`) e 8 (vários drivers). Tudo vive em `src/modules/modeling/`, carregado como **módulo dinâmico** só quando o usuário abre ou cria um modelo.

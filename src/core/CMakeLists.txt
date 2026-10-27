@@ -5,6 +5,7 @@ add_library(mydb_core STATIC
     model/ForeignKey.cpp
     model/LocalTime.cpp
     model/TableDefinition.cpp
+    sql/SqlFormatter.cpp
     sql/SqlSplitter.cpp
     sql/SqlTokenizer.cpp
 )

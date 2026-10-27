@@ -109,8 +109,9 @@ OpenSession* SessionService::findOpen(std::string_view sessionId) const {
 
 void SessionService::post(OpenSession& session, Job job) {
     CachedMetadataProvider* metadata = session.m_metadata.get();
-    session.m_worker->post([metadata, job = std::move(job)](core::IConnection& connection) {
-        WorkContext context(connection, *metadata);
+    log::SessionLogger* logger = &session.m_logger;
+    session.m_worker->post([metadata, logger, job = std::move(job)](core::IConnection& connection) {
+        WorkContext context(connection, *metadata, *logger);
         job(context);
     });
 }
@@ -144,10 +145,7 @@ void SessionService::useDatabase(std::string_view sessionId, const std::string& 
         [this, owner = std::string(sessionId), target = database, done = std::move(done)](Outcome<Done> outcome) {
             try {
                 if (outcome.ok()) {
-                    if (OpenSession* session = findOpen(owner)) {
-                        session->m_currentDatabase = target;
-                        m_events.publish(sdk::DatabaseChanged{.sessionId = owner, .database = target});
-                    }
+                    setCurrentDatabase(owner, target);
                 }
                 if (done) {
                     done(std::move(outcome));
@@ -156,6 +154,13 @@ void SessionService::useDatabase(std::string_view sessionId, const std::string& 
                 logError(owner, std::current_exception());
             }
         });
+}
+
+void SessionService::setCurrentDatabase(std::string_view sessionId, std::string database) {
+    if (OpenSession* session = findOpen(sessionId)) {
+        session->m_currentDatabase = database;
+        m_events.publish(sdk::DatabaseChanged{.sessionId = session->id(), .database = std::move(database)});
+    }
 }
 
 void SessionService::refresh(std::string_view sessionId, std::string database,

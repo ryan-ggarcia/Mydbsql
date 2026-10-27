@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/model/ObjectRef.hpp"
+#include "sdk/IQueryWorkbench.hpp"
 
 #include <cstdint>
 #include <optional>
@@ -40,6 +41,10 @@ public:
 
     [[nodiscard]] virtual bool panelVisible(Panel panel) const = 0;
     virtual void setPanelVisible(Panel panel, bool visible) = 0;
+
+    /// As abas de query (Fase 5). Nunca nulo.
+    [[nodiscard]] virtual IQueryWorkbench& queries() = 0;
+    [[nodiscard]] virtual const IQueryWorkbench& queries() const = 0;
 
     virtual void showAbout() = 0;
     virtual void quit() = 0;

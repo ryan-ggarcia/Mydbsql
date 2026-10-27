@@ -18,6 +18,7 @@ add_executable(mydb_tests
     unit/core/DbErrorTest.cpp
     unit/core/LocalTimeTest.cpp
     unit/core/ModelTest.cpp
+    unit/core/SqlFormatterTest.cpp
     unit/core/SqlSplitterTest.cpp
     unit/core/SqlTokenizerTest.cpp
     unit/sdk/SdkTest.cpp

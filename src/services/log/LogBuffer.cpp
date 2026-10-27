@@ -73,10 +73,17 @@ std::size_t LogBuffer::size() const {
 }
 
 void SessionLogger::log(core::LogCategory category, std::string_view text) noexcept {
+    if (category == core::LogCategory::Sql && m_userThread.load() == std::this_thread::get_id()) {
+        category = core::LogCategory::UserSql;
+    }
     try {
         m_buffer->append(category, m_sessionId, text);
     } catch (...) { // NOLINT(bugprone-empty-catch): sem memória para o log, a linha se perde
     }
+}
+
+void SessionLogger::setUserSql(bool on) noexcept {
+    m_userThread = on ? std::this_thread::get_id() : std::thread::id();
 }
 
 } // namespace mydb::services::log
