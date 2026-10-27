@@ -183,7 +183,13 @@ MainWindow::MainWindow(Dependencies dependencies, QWidget* parent)
     updateCommandStates();
 }
 
-MainWindow::~MainWindow() = default;
+MainWindow::~MainWindow() {
+    // O ~QWidget destrói os filhos depois dos membros, e eles ainda emitem sinais (no Linux, o dock do log emite
+    // visibilityChanged); sem isto, os lambdas ligados a this usariam m_commands já destruído.
+    for (QObject* child : findChildren<QObject*>()) {
+        child->disconnect(this);
+    }
+}
 
 void MainWindow::buildLayout() {
     // Árvore com os filtros em cima.
