@@ -31,16 +31,19 @@ public:
 
     explicit QueryHistoryStore(core::ISettingsStore& settings, int keepDays = 30, std::size_t maxEntries = 1000);
 
-    /// Lança session::SettingsError se o documento estiver corrompido ou vier de uma versão mais nova.
+    /// Lança session::SettingsError se o documento estiver corrompido ou vier de uma versão mais nova. Depois
+    /// dessa falha o store fica em memória e não grava nada (o arquivo não é sobrescrito) até um clear().
     void load();
 
-    /// Acrescenta e grava (com escrita atômica). Remove os vencidos e os excedentes.
+    /// Acrescenta e grava (com escrita atômica), salvo depois de um load() com falha. Remove os vencidos e os
+    /// excedentes.
     void add(HistoryEntry entry);
 
     /// Da mais nova para a mais antiga. `text` vazio devolve tudo; senão, as que contêm `text` (sem
     /// diferenciar maiúsculas de minúsculas), filtradas por sessão se `sessionId` não for vazio.
     [[nodiscard]] std::vector<HistoryEntry> search(std::string_view text, std::string_view sessionId = {}) const;
 
+    /// Esvazia e grava, inclusive por cima de um arquivo que load() não conseguiu ler.
     void clear();
     void setKeepDays(int days);
 
@@ -52,6 +55,7 @@ private:
     int m_keepDays;
     std::size_t m_maxEntries;
     std::vector<HistoryEntry> m_entries; ///< da mais antiga para a mais nova
+    bool m_writable{true};               ///< false depois de um load() com falha, até um clear()
 };
 
 } // namespace mydb::services::query

@@ -315,6 +315,16 @@ private Q_SLOTS:
         QVERIFY(!f.window->logPanel().text().contains(QStringLiteral("SHOW DATABASES")));
     }
 
+    void unreadableHistoryIsReportedInTheLogAndKept() {
+        Fixture f;
+        const std::string corrupted = "{ not json";
+        f.settings.write(mydb::services::query::QueryHistoryStore::kDocument, corrupted);
+        f.createWindow();
+        QTRY_VERIFY(f.window->logPanel().text().contains(QStringLiteral("Histórico de queries não carregado")));
+        f.history.add(mydb::services::query::HistoryEntry{});
+        QVERIFY(f.settings.read(mydb::services::query::QueryHistoryStore::kDocument) == corrupted);
+    }
+
     void hostTabListsDatabasesWithoutServerAdmin() {
         Fixture f;
         f.open();

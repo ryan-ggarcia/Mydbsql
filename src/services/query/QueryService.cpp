@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <exception>
 #include <fstream>
 #include <memory>
 #include <optional>
@@ -59,12 +60,15 @@ public:
         std::size_t maxRows{1000};
         std::size_t sqlLimit{0}; ///< 0: sem corte
         std::uint32_t firstLine{1};
+        bool throttled{false}; ///< runFile: só kFileMaxErrors erros e progresso quando a UI não tem nada pendente
     };
 
-    Runner(session::WorkContext& context, const std::atomic<bool>& cancelled, Deliver deliver, std::string database)
+    Runner(session::WorkContext& context, const std::atomic<bool>& cancelled, Deliver deliver,
+           const std::atomic<std::size_t>& pending, std::string database)
         : m_context(&context),
           m_cancelled(&cancelled),
           m_deliver(std::move(deliver)),
+          m_pending(&pending),
           m_tokenizer(context.connection().dialect().syntax()) {
         m_effects.database = std::move(database);
     }
@@ -206,7 +210,9 @@ private:
         if (!m_options.explain) {
             track(statement.text);
         }
-        m_deliver(std::move(result));
+        if (!m_options.throttled || m_pending->load() == 0) {
+            m_deliver(std::move(result));
+        }
     }
 
     void failed(const SqlStatement& statement, const std::exception_ptr& error, bool cancelled) {
@@ -218,7 +224,10 @@ private:
         } else {
             ++m_summary.failed;
         }
-        m_deliver(std::move(result));
+        if (!m_options.throttled || m_errorsSent < kFileMaxErrors) {
+            ++m_errorsSent;
+            m_deliver(std::move(result));
+        }
     }
 
     /// Guarda os efeitos de uma sentença bem-sucedida (USE e DDL).
@@ -259,11 +268,13 @@ private:
     session::WorkContext* m_context;
     const std::atomic<bool>* m_cancelled;
     Deliver m_deliver;
+    const std::atomic<std::size_t>* m_pending; ///< resultados entregues que a UI ainda não consumiu
     core::sql::SqlTokenizer m_tokenizer;
     Options m_options;
     QuerySummary m_summary;
     Effects m_effects;
     std::size_t m_index{0};
+    std::size_t m_errorsSent{0};
     bool m_stopped{false};
 };
 
@@ -281,7 +292,8 @@ void QueryService::execute(std::string_view sessionId, QueryRequest request, Sta
                                              .keepRows = true,
                                              .maxRows = query.maxRows,
                                              .sqlLimit = 0,
-                                             .firstLine = query.firstLine});
+                                             .firstLine = query.firstLine,
+                                             .throttled = false});
             const std::vector<SqlStatement> statements = core::sql::SqlSplitter::split(query.sql, runner.syntax());
             runner.run(statements, query.mode);
         },
@@ -300,7 +312,8 @@ void QueryService::runFile(std::string_view sessionId, std::filesystem::path fil
                                              .keepRows = false,
                                              .maxRows = 0,
                                              .sqlLimit = kFileSqlLimit,
-                                             .firstLine = 1});
+                                             .firstLine = 1,
+                                             .throttled = true});
             std::ifstream in(path, std::ios::binary);
             if (!in) {
                 const std::u8string shown = path.u8string();
@@ -358,8 +371,12 @@ void QueryService::start(std::string_view sessionId, Body body, StatementCallbac
     auto flag = std::make_shared<std::atomic<bool>>(false);
     m_cancelFlags.insert_or_assign(id, flag);
     auto started = std::chrono::system_clock::now();
-    Deliver deliver = [ui = m_sessions->dispatcher(), report = std::move(onStatement)](StatementResult result) {
-        ui([callback = report, statement = std::move(result)] {
+    auto pending = std::make_shared<std::atomic<std::size_t>>(0);
+    Deliver deliver = [ui = m_sessions->dispatcher(), report = std::move(onStatement),
+                       pending](StatementResult result) {
+        pending->fetch_add(1);
+        ui([callback = report, statement = std::move(result), pending] {
+            pending->fetch_sub(1);
             if (callback) {
                 callback(statement);
             }
@@ -367,9 +384,9 @@ void QueryService::start(std::string_view sessionId, Body body, StatementCallbac
     };
     m_sessions->run<RunResult>(
         sessionId,
-        [work = std::move(body), flag, send = std::move(deliver), database](session::WorkContext& context) {
+        [work = std::move(body), flag, send = std::move(deliver), pending, database](session::WorkContext& context) {
             const UserSqlScope userSql(context.logger());
-            Runner runner(context, *flag, send, database);
+            Runner runner(context, *flag, send, *pending, database);
             work(runner);
             return runner.finish();
         },
@@ -410,6 +427,51 @@ void QueryService::start(std::string_view sessionId, Body body, StatementCallbac
             }
             finish(Outcome<QuerySummary>::success(result.summary));
         });
+}
+
+void QueryService::completionSeed(std::string_view sessionId, std::string functionCatalog,
+                                  services::Completion<CompletionSeed> done) {
+    const session::OpenSession* open = m_sessions->find(sessionId);
+    std::string driverId = open != nullptr ? open->session().params.driverId : std::string();
+    std::string current = open != nullptr ? open->currentDatabase() : std::string();
+    // Os metadados vêm do cache no worker (§2.3); o índice só é lido depois de pronto.
+    m_sessions->run<CompletionSeed>(
+        sessionId,
+        [driverId, current, catalog = std::move(functionCatalog)](session::WorkContext& context) {
+            CompletionSeed seed{.syntax = context.connection().dialect().syntax(), .index = {}};
+            auto index = std::make_shared<CompletionIndex>(seed.syntax);
+            index->setKeywords(sqlKeywords(driverId));
+            if (!catalog.empty()) {
+                index->setFunctions(parseFunctionCatalog(catalog));
+            }
+            core::IMetadataProvider& metadata = context.metadata();
+            index->setDatabases(metadata.databases(), current);
+            if (!current.empty()) {
+                index->setObjects(current, metadata.objects(current));
+            }
+            seed.index = std::move(index);
+            return seed;
+        },
+        std::move(done));
+}
+
+void QueryService::withColumns(std::string_view sessionId, std::shared_ptr<const CompletionIndex> base,
+                               std::vector<core::model::ObjectRef> tables,
+                               services::Completion<std::shared_ptr<const CompletionIndex>> done) {
+    using IndexPtr = std::shared_ptr<const CompletionIndex>;
+    m_sessions->run<IndexPtr>(
+        sessionId,
+        [from = std::move(base), wanted = std::move(tables)](session::WorkContext& context) {
+            auto next = std::make_shared<CompletionIndex>(*from);
+            for (const core::model::ObjectRef& table : wanted) {
+                try {
+                    next->setColumns(context.metadata().table(table));
+                } catch (const std::exception&) { // NOLINT(bugprone-empty-catch): sem colunas, só não completa
+                }
+            }
+            return IndexPtr(std::move(next));
+        },
+        std::move(done));
 }
 
 void QueryService::cancel(std::string_view sessionId) {

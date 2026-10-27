@@ -39,15 +39,8 @@ namespace query = services::query;
 constexpr int kMessagesTab = 0;
 constexpr int kMaxResultTabs = 50;
 constexpr int kMaxMessageLines = 5000;
-constexpr std::size_t kFileProgressEvery = 500;
 constexpr int kEditorStretch = 3;
 constexpr int kResultsStretch = 2;
-
-/// O que o worker da sessão monta para o editor: as regras léxicas do dialeto e o índice do autocomplete.
-struct CompletionSeed {
-    core::sql::SqlSyntax syntax;
-    std::shared_ptr<const query::CompletionIndex> index;
-};
 
 using IndexPtr = std::shared_ptr<const query::CompletionIndex>;
 
@@ -148,38 +141,19 @@ void QueryTab::refreshCompletion() {
     }
     ++m_generation;
     std::string driverId = open->session().params.driverId;
-    std::string current = open->currentDatabase();
     QPointer<QueryTab> self(this);
     const std::uint64_t generation = m_generation;
-    // Montado no worker da sessão (§2.3): os metadados vêm do cache e o índice só é lido depois.
-    m_deps.sessions->run<CompletionSeed>(
-        m_sessionId,
-        [driverId, current](services::session::WorkContext& context) {
-            CompletionSeed seed{.syntax = context.connection().dialect().syntax(), .index = {}};
-            auto index = std::make_shared<query::CompletionIndex>(seed.syntax);
-            index->setKeywords(query::sqlKeywords(driverId));
-            const std::string catalog = functionCatalog(driverId);
-            if (!catalog.empty()) {
-                index->setFunctions(query::parseFunctionCatalog(catalog));
-            }
-            core::IMetadataProvider& metadata = context.metadata();
-            index->setDatabases(metadata.databases(), current);
-            if (!current.empty()) {
-                index->setObjects(current, metadata.objects(current));
-            }
-            seed.index = std::move(index);
-            return seed;
-        },
-        [self, generation, driverId](services::Outcome<CompletionSeed> outcome) {
-            if (!self || generation != self->m_generation || !outcome.ok()) {
-                return;
-            }
-            CompletionSeed seed = std::move(outcome).value();
-            self->m_editor->setSyntax(seed.syntax, query::sqlKeywords(driverId));
-            self->m_requestedTables.clear();
-            self->m_index = seed.index;
-            self->m_editor->setCompletionIndex(std::move(seed.index));
-        });
+    m_deps.queries->completionSeed(m_sessionId, functionCatalog(driverId),
+                                   [self, generation, driverId](services::Outcome<query::CompletionSeed> outcome) {
+                                       if (!self || generation != self->m_generation || !outcome.ok()) {
+                                           return;
+                                       }
+                                       query::CompletionSeed seed = std::move(outcome).value();
+                                       self->m_editor->setSyntax(seed.syntax, query::sqlKeywords(driverId));
+                                       self->m_requestedTables.clear();
+                                       self->m_index = seed.index;
+                                       self->m_editor->setCompletionIndex(std::move(seed.index));
+                                   });
 }
 
 void QueryTab::requestColumns(std::vector<core::model::ObjectRef> tables) {
@@ -197,32 +171,21 @@ void QueryTab::requestColumns(std::vector<core::model::ObjectRef> tables) {
     for (const auto& table : tables) {
         keys.push_back(table.database + '\n' + table.name);
     }
-    m_deps.sessions->run<IndexPtr>(
-        m_sessionId,
-        [base, tables](services::session::WorkContext& context) {
-            auto next = std::make_shared<query::CompletionIndex>(*base);
-            for (const core::model::ObjectRef& table : tables) {
-                try {
-                    next->setColumns(context.metadata().table(table));
-                } catch (const std::exception&) { // NOLINT(bugprone-empty-catch): sem colunas, só não completa
-                }
-            }
-            return IndexPtr(std::move(next));
-        },
-        [self, generation, base, keys](services::Outcome<IndexPtr> outcome) {
-            if (!self || generation != self->m_generation || !outcome.ok()) {
-                return;
-            }
-            if (self->m_index != base) {
-                // Outro pedido trocou o índice no meio: estas tabelas serão pedidas de novo.
-                for (const std::string& key : keys) {
-                    self->m_requestedTables.erase(key);
-                }
-                return;
-            }
-            self->m_index = std::move(outcome).value();
-            self->m_editor->setCompletionIndex(self->m_index);
-        });
+    m_deps.queries->withColumns(m_sessionId, base, std::move(tables),
+                                [self, generation, base, keys](services::Outcome<IndexPtr> outcome) {
+                                    if (!self || generation != self->m_generation || !outcome.ok()) {
+                                        return;
+                                    }
+                                    if (self->m_index != base) {
+                                        // Outro pedido trocou o índice no meio: estas tabelas serão pedidas de novo.
+                                        for (const std::string& key : keys) {
+                                            self->m_requestedTables.erase(key);
+                                        }
+                                        return;
+                                    }
+                                    self->m_index = std::move(outcome).value();
+                                    self->m_editor->setCompletionIndex(self->m_index);
+                                });
 }
 
 void QueryTab::setTitle(const QString& title) {
@@ -284,7 +247,6 @@ bool QueryTab::startRun() {
     }
     m_messages->clear();
     m_errorShown = false;
-    m_fileStatements = 0;
     m_running = true;
     m_metrics->setText(tr("Executando…"));
     Q_EMIT runningChanged();
@@ -380,10 +342,8 @@ void QueryTab::onStatement(const query::StatementResult& result) {
         return;
     }
     if (m_fileRun) {
-        // Um arquivo grande tem milhões de sentenças: só o progresso, de tempos em tempos.
-        if (++m_fileStatements % kFileProgressEvery == 0) {
-            m_metrics->setText(tr("Executando… %1 sentenças").arg(m_fileStatements));
-        }
+        // O QueryService só manda progresso de tempos em tempos: o índice diz quantas sentenças já foram.
+        m_metrics->setText(tr("Executando… %1 sentenças").arg(result.index + 1));
         return;
     }
     QString text;

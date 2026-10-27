@@ -171,11 +171,13 @@ MainWindow::MainWindow(Dependencies dependencies, QWidget* parent)
     for (const auto* session : m_deps.sessions->sessions()) {
         onSessionOpened(session->id());
     }
+    m_deps.history->setKeepDays(EditorPreferences::load(*m_deps.settings).historyKeepDays);
     try {
         m_deps.history->load();
-        m_deps.history->setKeepDays(EditorPreferences::load(*m_deps.settings).historyKeepDays);
     } catch (const std::exception& error) {
-        qWarning("Histórico de queries ignorado: %s", error.what());
+        m_deps.log->append(core::LogCategory::Error, {},
+                           std::string("Histórico de queries não carregado: ") + error.what() +
+                               ". O arquivo não será alterado até o histórico ser limpo.");
     }
     restoreQueryTabs();
     updateCommandStates();

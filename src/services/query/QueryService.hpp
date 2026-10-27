@@ -1,6 +1,9 @@
 #pragma once
 
+#include "core/model/ObjectRef.hpp"
+#include "core/sql/SqlSyntax.hpp"
 #include "services/common/Outcome.hpp"
+#include "services/query/CompletionIndex.hpp"
 #include "services/query/QueryHistoryStore.hpp"
 #include "services/query/QueryTypes.hpp"
 #include "services/session/SessionService.hpp"
@@ -12,8 +15,15 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace mydb::services::query {
+
+/// O que o editor precisa de uma sessão: as regras léxicas do dialeto e o índice inicial do autocomplete.
+struct CompletionSeed {
+    core::sql::SqlSyntax syntax;
+    std::shared_ptr<const CompletionIndex> index;
+};
 
 /// Executa SQL do usuário numa sessão aberta (CLAUDE.md §5, Fase 5), no ConnectionWorker dela.
 ///
@@ -37,13 +47,31 @@ public:
     void execute(std::string_view sessionId, QueryRequest request, StatementCallback onStatement,
                  services::Completion<QuerySummary> done);
 
+    /// No máximo tantos erros do runFile chegam a `onStatement`; os demais só entram em summary.failed.
+    static constexpr std::size_t kFileMaxErrors = 100;
+
     /// Roda um arquivo .sql inteiro em streaming, com memória constante (§2.1): lê em blocos, divide e executa
     /// sentença a sentença, sem guardar linhas de resultado (só contagens e erros). `onStatement` recebe
-    /// StatementResult sem `table`. Com stopOnError, para no primeiro erro.
+    /// StatementResult sem `table`, e não um por sentença: para a fila da thread da UI não crescer quando a UI
+    /// for mais lenta que o servidor, chegam só os primeiros kFileMaxErrors erros e, como progresso, uma
+    /// sentença bem-sucedida quando não houver nenhuma entrega pendente na UI (o `index` dela diz quantas já
+    /// foram). Assim há no máximo kFileMaxErrors + 1 resultados na fila. Com stopOnError, para no primeiro erro.
     void runFile(std::string_view sessionId, std::filesystem::path file, bool stopOnError,
                  StatementCallback onStatement, services::Completion<QuerySummary> done);
 
     void cancel(std::string_view sessionId);
+
+    /// Monta no worker da sessão as regras léxicas do dialeto e o índice do autocomplete (palavras-chave,
+    /// funções de `functionCatalog` (JSON de parseFunctionCatalog; vazio = sem funções), bancos e objetos do
+    /// banco atual), entregues na thread da UI.
+    void completionSeed(std::string_view sessionId, std::string functionCatalog,
+                        services::Completion<CompletionSeed> done);
+
+    /// Uma cópia de `base` com as colunas de `tables`, montada no worker da sessão e entregue na thread da UI.
+    /// Tabela cujas colunas não puderam ser lidas fica sem colunas.
+    void withColumns(std::string_view sessionId, std::shared_ptr<const CompletionIndex> base,
+                     std::vector<core::model::ObjectRef> tables,
+                     services::Completion<std::shared_ptr<const CompletionIndex>> done);
 
 private:
     class Runner;

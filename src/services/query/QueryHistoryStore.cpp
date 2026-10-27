@@ -32,8 +32,10 @@ QueryHistoryStore::QueryHistoryStore(core::ISettingsStore& settings, int keepDay
 
 void QueryHistoryStore::load() {
     m_entries.clear();
+    m_writable = false; // só volta a gravar se a leitura terminar bem
     const auto text = m_settings->read(kDocument);
     if (!text) {
+        m_writable = true;
         return;
     }
     try {
@@ -58,6 +60,7 @@ void QueryHistoryStore::load() {
     }
     std::ranges::stable_sort(m_entries, {}, &HistoryEntry::time);
     prune();
+    m_writable = true;
 }
 
 void QueryHistoryStore::add(HistoryEntry entry) {
@@ -82,6 +85,7 @@ std::vector<HistoryEntry> QueryHistoryStore::search(std::string_view text, std::
 
 void QueryHistoryStore::clear() {
     m_entries.clear();
+    m_writable = true;
     save();
 }
 
@@ -106,6 +110,9 @@ void QueryHistoryStore::prune() {
 }
 
 void QueryHistoryStore::save() const {
+    if (!m_writable) {
+        return;
+    }
     Json entries = Json::array();
     for (const HistoryEntry& entry : m_entries) {
         entries.push_back(Json{{"time", toMillis(entry.time)},

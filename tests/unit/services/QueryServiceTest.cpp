@@ -7,17 +7,22 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <optional>
 #include <random>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 namespace {
 
 using mydb::services::Outcome;
+using mydb::services::query::CompletionIndex;
+using mydb::services::query::CompletionSeed;
 using mydb::services::query::ExecutionMode;
 using mydb::services::query::QueryHistoryStore;
 using mydb::services::query::QueryRequest;
@@ -304,6 +309,38 @@ TEST_F(QueryServiceTest, CancelStopsTheRunningStatementAndTheRest) {
     EXPECT_EQ(executed().size(), 1U);
 }
 
+TEST_F(QueryServiceTest, BuildsTheCompletionIndexOnTheWorker) {
+    mydb::core::model::DbObject users;
+    users.ref = mydb::core::model::ObjectRef{
+        .database = "app", .schema = {}, .name = "users", .type = mydb::core::model::ObjectType::Table};
+    server.objects["app"] = {users};
+    std::optional<Outcome<CompletionSeed>> seed;
+    queries.completionSeed("s1", R"({"functions": [{"name": "CONCAT"}]})",
+                           [&seed](Outcome<CompletionSeed> o) { seed.emplace(std::move(o)); });
+    ASSERT_TRUE(ui.runUntil([&] { return seed.has_value(); }));
+    ASSERT_TRUE(seed->ok());
+    const std::shared_ptr<const CompletionIndex> index = seed->value().index;
+    ASSERT_NE(index, nullptr);
+    const auto has = [](const CompletionIndex& from, std::string_view text, std::string_view wanted) {
+        const auto items = from.complete(text, text.size());
+        return std::ranges::any_of(items, [wanted](const auto& item) { return item.text == wanted; });
+    };
+    EXPECT_TRUE(has(*index, "SELECT CONC", "CONCAT"));
+    EXPECT_TRUE(has(*index, "SELECT * FROM us", "users"));
+    EXPECT_TRUE(has(*index, "SELECT * FROM lo", "logs"));
+
+    const std::string_view text = "SELECT * FROM users WHERE ";
+    ASSERT_FALSE(index->missingTables(text, text.size()).empty());
+    std::optional<Outcome<std::shared_ptr<const CompletionIndex>>> next;
+    queries.withColumns("s1", index, index->missingTables(text, text.size()),
+                        [&next](Outcome<std::shared_ptr<const CompletionIndex>> o) { next.emplace(std::move(o)); });
+    ASSERT_TRUE(ui.runUntil([&] { return next.has_value(); }));
+    ASSERT_TRUE(next->ok());
+    EXPECT_EQ(server.tableCalls.load(), 1);
+    EXPECT_TRUE(next->value()->missingTables(text, text.size()).empty());
+    EXPECT_FALSE(index->missingTables(text, text.size()).empty()) << "a base não muda";
+}
+
 TEST_F(QueryServiceTest, FailsWhenTheSessionIsNotOpen) {
     const auto outcome = execute(request("SELECT 1"), "nope");
     ASSERT_FALSE(outcome.ok());
@@ -331,21 +368,23 @@ protected:
 TEST_F(QueryServiceFileTest, StreamsTheFileWithoutKeepingRows) {
     const std::string big(100'000, 'x'); // maior que um bloco de leitura
     const auto outcome = runFile(write("DELIMITER //\nCREATE PROCEDURE p() BEGIN SELECT 1; END//\nDELIMITER ;\n"
-                                       "SELECT many;\nUPDATE t SET a = 1;\nSELECT " +
+                                       "SELECT many;\nUPDATE t SET a = 1;\nSELECT FAIL" +
                                        big + "\n"),
                                  true);
     ASSERT_TRUE(outcome.ok());
     const auto sent = executed();
     ASSERT_EQ(sent.size(), 4U);
     EXPECT_EQ(sent[0], "CREATE PROCEDURE p() BEGIN SELECT 1; END");
-    EXPECT_EQ(sent[3].size(), big.size() + 7);
-    ASSERT_EQ(results.size(), 4U);
+    EXPECT_EQ(sent[3].size(), big.size() + 11);
+    // Os sucessos chegam só como progresso; o erro sempre chega.
+    ASSERT_FALSE(results.empty());
     for (const StatementResult& result : results) {
         EXPECT_FALSE(result.table.has_value());
     }
-    EXPECT_EQ(results[3].sql.size(), 1024U);
-    EXPECT_EQ(results[3].line, 6U);
-    EXPECT_EQ(outcome.value().rowsReturned, 6U);
+    EXPECT_FALSE(results.back().error.empty());
+    EXPECT_EQ(results.back().sql.size(), 1024U);
+    EXPECT_EQ(results.back().line, 6U);
+    EXPECT_EQ(outcome.value().rowsReturned, 5U);
     EXPECT_EQ(outcome.value().rowsAffected, 4);
     EXPECT_EQ(history.search("").front().sql.rfind("-- ", 0), 0U);
 }
@@ -357,6 +396,35 @@ TEST_F(QueryServiceFileTest, StopsOnErrorAndReportsMissingFiles) {
 
     const auto missing = runFile(m_file.string() + ".nada", true);
     EXPECT_FALSE(missing.ok());
+}
+
+TEST_F(QueryServiceFileTest, KeepsTheUiQueueBoundedWhenTheUiFallsBehind) {
+    constexpr std::size_t kOk = 1000;
+    constexpr std::size_t kFailures = QueryService::kFileMaxErrors * 3;
+    std::string text;
+    for (std::size_t i = 0; i < kOk; ++i) {
+        text += "UPDATE t SET a = 1;\n";
+    }
+    for (std::size_t i = 0; i < kFailures; ++i) {
+        text += "SELECT FAIL;\n";
+    }
+    std::optional<Outcome<QuerySummary>> outcome;
+    queries.runFile(
+        "s1", write(text), false, [this](const StatementResult& r) { results.push_back(r); },
+        [&outcome](Outcome<QuerySummary> o) { outcome.emplace(std::move(o)); });
+    // A UI não consome nada até o worker terminar o arquivo inteiro.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{10};
+    while (executed().size() < kOk + kFailures && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds{5});
+    }
+    const auto summary = wait(outcome);
+    ASSERT_TRUE(summary.ok());
+    EXPECT_EQ(summary.value().statements, kOk + kFailures);
+    EXPECT_EQ(summary.value().failed, kFailures);
+    ASSERT_EQ(results.size(), QueryService::kFileMaxErrors + 1) << "um progresso e os primeiros erros";
+    EXPECT_TRUE(results.front().error.empty());
+    EXPECT_EQ(results.front().index, 0U);
+    EXPECT_FALSE(results.back().error.empty());
 }
 
 } // namespace

@@ -36,7 +36,7 @@ class SqlEditor;
 
 /// Uma aba de query (Fase 5): editor, abas de resultado (uma por sentença que devolve linhas), mensagens e
 /// métricas. Executa pelo QueryService; o realce e o autocomplete vêm do dialeto e dos metadados da sessão,
-/// montados no worker dela.
+/// montados pelo QueryService no worker dela.
 class QueryTab final : public QWidget {
     Q_OBJECT
 
@@ -103,7 +103,6 @@ private:
     bool m_running{false};
     bool m_fileRun{false};
     bool m_errorShown{false};
-    std::size_t m_fileStatements{0};
     std::uint64_t m_generation{0}; ///< descarta índices de autocomplete pedidos antes da última troca
     std::shared_ptr<const services::query::CompletionIndex> m_index;
     std::set<std::string> m_requestedTables;

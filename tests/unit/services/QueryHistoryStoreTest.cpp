@@ -97,4 +97,22 @@ TEST(QueryHistoryStoreTest, RejectsCorruptedAndNewerDocuments) {
     EXPECT_TRUE(history.search("").empty());
 }
 
+TEST(QueryHistoryStoreTest, DoesNotOverwriteAnUnreadableDocumentUntilCleared) {
+    mydb::infra::settings::MemorySettingsStore settings;
+    const std::string newer = R"({"schemaVersion": 99, "entries": []})";
+    settings.write(QueryHistoryStore::kDocument, newer);
+    QueryHistoryStore history(settings, 1);
+    EXPECT_THROW(history.load(), mydb::services::session::SettingsError);
+    history.add(entry("SELECT 1"));
+    history.setKeepDays(0);
+    EXPECT_EQ(texts(history.search("")), (std::vector<std::string>{"SELECT 1"})) << "segue em memória";
+    EXPECT_EQ(settings.read(QueryHistoryStore::kDocument), newer);
+
+    history.clear();
+    history.add(entry("SELECT 2"));
+    QueryHistoryStore reloaded(settings);
+    reloaded.load();
+    EXPECT_EQ(texts(reloaded.search("")), (std::vector<std::string>{"SELECT 2"}));
+}
+
 } // namespace
