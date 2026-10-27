@@ -2,7 +2,7 @@
 
 Contexto para qualquer agente de IA (ou pessoa) retomar o trabalho. **Leia este arquivo inteiro e depois o `CLAUDE.md`**, que é a fonte de verdade do projeto. Este arquivo descreve *o que aconteceu e o que falta*; o `CLAUDE.md` descreve *o que construir e como*.
 
-Última atualização: 2026-10-16, com a **Fase 4** (janela principal e navegação) implementada localmente; falta a CI dela.
+Última atualização: 2026-10-27, com a **Fase 5** (editor de query) concluída e no GitHub; falta confirmar a CI verde do `34977d0` nos jobs Linux (§6, item 10).
 
 ---
 
@@ -10,7 +10,7 @@ Contexto para qualquer agente de IA (ou pessoa) retomar o trabalho. **Leia este 
 
 - **Projeto:** Mydbsql, um cliente gráfico de bancos de dados inspirado no HeidiSQL, a ser escrito **do zero em C++20**, orientado a objetos, com **SOLID**, **leve, rápido, fácil de estender** e **compatível com Linux, Windows e macOS**.
 - **Estado do repositório:** análise e **Fase 0** commitadas e no GitHub (`main`). Fase 0: CMake, presets, vcpkg, `infra/platform`, logging, `DbError`, janela vazia com `--measure-startup`, testes, benchmarks, CI e ADRs 0001–0006 (§3, item 9).
-- **Fase atual:** **Fase 4** implementada: 147 testes unitários, 3 de UI (14 casos na janela principal) e 33 de integração verdes no Windows. Fases 0 a 3 concluídas, com a CI verde no `6554d90` (só o orçamento do macOS falhou, e ele deixou de bloquear). Análise do HeidiSQL e do MySQL Workbench concluída.
+- **Fase atual:** **Fase 5** concluída (editor SQL, autocomplete, execução, abas de query, histórico, snippets). Localmente: 205 testes (unitários, UI e lint) e 43 de integração verdes no Windows. Fases 0 a 4 concluídas. Na CI do `e79a535`, só o `ui.main_window` falhava nos 3 jobs Linux; a correção está no `34977d0` (já no GitHub, CI rodando em 2026-10-27). **Próxima: Fase 6** (grade de dados e edição), a última do MVP.
 
 ---
 
@@ -21,7 +21,8 @@ Contexto para qualquer agente de IA (ou pessoa) retomar o trabalho. **Leia este 
 - Ambiente (desde 2026-10-14): **Windows 11 Home**, VS Code com a extensão do Claude Code, **7,7 GB de RAM e 8 núcleos lógicos** (na hora da análise, só ~0,9 GB livres). HeidiSQL 12.21 instalado em `%LOCALAPPDATA%\Programs\HeidiSQL`.
 - Pediu explicitamente o uso da skill **REA** (`reverse-engineer-anything`) para a engenharia reversa do HeidiSQL.
 - Prioridades que ele declarou, em ordem: (1) funcionalidades semelhantes ao HeidiSQL, (2) C++ + SOLID + OO, (3) app **leve e rápido**, (4) **fácil de adicionar funcionalidades**, (5) **compatível com Linux e demais SOs**.
-- Não faça commit, push nem mudanças em configurações do usuário (`~/.claude.json` etc.) sem ele pedir.
+- **O usuário faz o push.** O agente commita localmente em `main` (Conventional Commits) e acompanha a CI pelas anotações públicas. Nada de mudanças em configurações do usuário (`~/.claude.json` etc.) sem ele pedir.
+- Respostas diretas e claras, resumos de fase curtos. Arquivos de configuração (CMake, YAML, JSON, `.clang-*`) sem comentários.
 
 ---
 
@@ -91,6 +92,34 @@ Contexto para qualquer agente de IA (ou pessoa) retomar o trabalho. **Leia este 
    - CI: o job `integration` passou a compilar em release e roda o teste de 10 mil tabelas; o job de orçamento roda também o `mydb_ui_bench`; o Qt baixa `qtbase,qtsvg`.
 
 14. **2026-10-21, revisão do que foi construído contra o plano.** Subagentes `backend`, `frontend` e `tests` em `.claude/agents/`. Corrigido: chave do cache do Qt com vírgula (derrubava toda a CI da Fase 4); a aba Host chamava o `IServerAdmin` direto da UI e agora usa `services/admin/ServerAdminService`; o gerenciador de sessões inicial é destruído ao fechar (`WA_DeleteOnClose`); o CLAUDE.md não promete mais ViewModels (só quando uma tela pedir, decisão do usuário) nem `CompositionRoot.cpp` (a raiz de composição é o `main.cpp`).
+
+15. **2026-10-21 a 10-27, Fase 5** (feita pelos subagentes `backend` e `frontend`, revisada e commitada pelo agente principal). Decisões do usuário, perguntadas antes: editor próprio sobre `QPlainTextEdit` em vez do QScintilla, que é GPL-3 (ADR-0013); quatro itens adiados para a Fase 12 (esquemas de cores, ajuda SQL contextual, pesquisa na web, formatador online). Feito:
+   - `sdk`: `IQueryWorkbench` e `IWorkbench::queries()` (API **3.0**).
+   - `core/sql/SqlFormatter` (`formatSql`).
+   - `services/query`:
+     - `QueryService`: lote ou uma a uma, parar em erro, EXPLAIN, cancelar, `maxRows`, USE e DDL aplicados no fim, SQL no log uma vez como UserSql.
+     - `QueryService::runFile`: em streaming; a UI recebe só os 100 primeiros erros e um progresso por vez, com memória constante.
+     - `QueryService::completionSeed` e `withColumns`: a UI não encosta em `IConnection` nem em `IMetadataProvider`.
+     - `CompletionIndex` (prefixo, qualificadores, aliases), `QueryHistoryStore` (não sobrescreve um arquivo que falhou ao carregar), `SnippetStore` e `QueryTabsStore`.
+   - `resources/functions/mysql.json`: 210 funções escritas a partir da documentação oficial do MySQL e do MariaDB, nada do HeidiSQL.
+   - `ui`:
+     - `SqlEditor`: realce por bloco sobre o `SqlTokenizer`, números de linha, dobra por indentação, localizar/substituir com histórico, comentar, mover linhas, quebra de linha, popup de autocomplete com a sentença do cursor.
+     - `QueryTab` (abas de resultado e métricas) e `ResultTableModel` (grade simples somente leitura; a grade compacta é da Fase 6).
+     - Diálogos de histórico, snippets e localizar.
+     - `MainWindow` implementa `IQueryWorkbench`.
+   - `modules/query`: comandos do menu. Atalhos: F9, Ctrl+F9 e Shift+F9 para executar; Ctrl+T, Ctrl+Shift+F e Ctrl+/.
+   - Medições (debug): autocomplete com 10 mil tabelas ~1,7 ms; uma tecla num arquivo de 50 mil linhas ~6 ms de mediana. Em release: início em 71 ms, 37,3 MB.
+   - Commits: `a3c3c9f`, `0d4de0d`, `ff06fff`, `4edd6d5` e `f1e4056` (CLAUDE.md §5 marcado).
+
+16. **2026-10-27, CI da Fase 5 e ambiente.** Feito:
+   - **O Windows SDK sumiu** depois de uma atualização do VS (só restaram `Catalogs`, `Redist` e `UnionMetadata`; o `cl.exe` falhava com C1083 `crtdbg.h`). `setup.exe modify --add …Windows11SDK.26100` não fez nada. Resolveu `setup.exe repair` do Build Tools 18 pela linha de comando, com o UAC aceito pelo usuário (§8).
+   - **Build incremental sem dependência de headers:** depois do reparo, o Ninja deixou de ver mudanças em headers (prefixo do `/showIncludes` em pt-BR com acentos), e um objeto velho causou "stack corrupted" num teste. Resolveu `cmake --preset win-debug --fresh`; o `-t deps` voltou a listar os headers.
+   - **Correções da CI no Linux:**
+     - `a4495e1`: `-Wshadow`, o `std::ranges::unique` que não compila no Clang 15 com a libstdc++ 12 (NOLINT explicado no código) e achados do clang-tidy.
+     - `05dc15c`: optional checado no `ResultTableModel`; o `ci_step.py` passa a pôr na anotação a saída do teste que falhou.
+     - `e79a535`: `gdb` nos jobs Linux, para o Qt Test imprimir a pilha de um crash, que o `ci_step.py` leva para a anotação.
+   - **Orçamento do Linux:** o `BM_SplitStreaming` dobrou (0,67 s → 1,43 s, só no Linux, GCC 12 + LTO) quando o `mydb_bench` passou a linkar `services_query`. O `CompletionBench` foi para o `mydb_ui_bench` e o orçamento do Linux voltou a passar (`e79a535`).
+   - **Crash do `ui.main_window` no Linux** (vinha desde a Fase 4): o `~QWidget` destrói os filhos depois dos membros da `MainWindow`, e no Linux o dock do log emite `visibilityChanged` nessa hora; o lambda chamava `updateCommandStates()` sobre `m_commands` já destruído. Corrigido no `34977d0`: o `~MainWindow` desliga os sinais dos filhos ligados a `this`. Também evita um crash do app ao fechar no Linux.
 
 ---
 
@@ -162,7 +191,7 @@ Os detalhes estão no `CLAUDE.md` §1. Resumo:
    - **O usuário faz o push.** O agente commita localmente e acompanha a CI depois.
    - O `CMakeUserPresets.json` local (não versionado) tem os presets `win-debug` e `win-release` com os caminhos desta máquina.
 7. **[Sugestão] Triplet estático no Windows** (`x64-windows-static-md`): eliminaria `spdlog.dll`, `fmt.dll`, `gtest*.dll` e `benchmark*.dll` e reduziria os módulos carregados na inicialização. Não foi feito para não divergir da CI sem medir.
-8. **Falta:** push e CI verde da Fase 4 (jobs novos: teste de UI da janela principal, `mydb_ui_bench` no orçamento, integração em release com 10 mil tabelas, que leva alguns minutos na primeira criação). Os baselines de `bench/baseline/` ainda não têm os benchmarks da árvore: os limites absolutos do `budget.json` já valem. Pendências dentro do plano: SRID das colunas espaciais, túnel SSH (Fase 11), recomendar `table_definition_cache` para MariaDB na documentação de usuário (Fase 12). **Depois: Fase 5** (editor de query).
+8. **[Feito] Fase 4 na CI:** os jobs novos (UI, `mydb_ui_bench`, integração em release com 10 mil tabelas) rodam; o único problema era o crash do `ui.main_window` no Linux (§3, item 16). Os baselines de `bench/baseline/` não têm os benchmarks da árvore nem do autocomplete: valem os limites absolutos do `budget.json`. Pendências dentro do plano: SRID das colunas espaciais, túnel SSH (Fase 11), recomendar `table_definition_cache` para MariaDB na documentação de usuário (Fase 12).
 9. **2026-10-16: macOS adiado** (decisão do usuário, ADR-0011). Linux e Windows bloqueiam a CI; os jobs do macOS rodam com `continue-on-error`. Pendências para a etapa final de portabilidade:
    - cofre Keychain (`MacCredentialStore`) só exercitado na CI, nunca testado num Mac;
    - metas de início e memória provisórias (§2.1); medir num Mac real e fixar `bench/baseline/macos.json`;
@@ -170,6 +199,31 @@ Os detalhes estão no `CLAUDE.md` §1. Resumo:
    - build universal (arm64 + x86-64) e `.dmg` assinado e notarizado (Fase 12);
    - início de ~558 ms no runner `macos-latest` na CI do `6554d90` (meta provisória: 400 ms);
    - voltar a tornar os jobs do macOS obrigatórios no `ci.yml`.
+10. **Para retomar (2026-10-27), em ordem:**
+    1. **Ver a CI do `34977d0`.** Se os 3 jobs Linux ficarem verdes, trocar "Falta a CI" por "CI verde no `34977d0`" no `CLAUDE.md` §5 (Fases 4 e 5) e commitar. Se não, ler as anotações (a pilha do crash vem nelas, §8).
+    2. **Começar a Fase 6** (grade de dados e edição, `CLAUDE.md` §5), a última do MVP:
+       - `ResultBuffer` compacto + benchmarks;
+       - `ResultSetModel` com `fetchMore`;
+       - aba Data (filtro WHERE, filtros rápidos, ordenação, colunas, preview de BLOB);
+       - delegates (Hex, DateTime, Enum, Set, texto longo, função, NULL);
+       - `DataEditSession` (Unit of Work pela chave primária/única);
+       - seguir FK.
+       Meta: 1 milhão de linhas a 60 fps com memória ≤ 1,5× os dados. Como nas fases anteriores: contratos e interfaces pelo agente principal, back-end e front-end pelos subagentes, um de cada vez (dois ao mesmo tempo disputam a pasta de build).
+    3. **Sobras da Fase 5** (nada bloqueia; fazer quando a área for tocada):
+       - snippets no autocomplete (o índice aceita, o editor não alimenta);
+       - indentar bloco com Tab;
+       - dobra por BEGIN…END (hoje é por indentação);
+       - persistir a quebra de linha;
+       - comentário do contrato de `missingTables` no header (considera a sentença inteira);
+       - modo em lote supõe multi-statements: checar por driver na Fase 8;
+       - o resultado extra de um `CALL` aparece como mais um resultado da mesma sentença;
+       - erros além de 100 no `runFile` só aparecem no total;
+       - realce de string ou comentário aberto limitado a 200 linhas (`shortcut:` no código);
+       - constante `menus::kQuery` no sdk em vez do texto "query" na `MainWindow`.
+    4. **Avisos conhecidos que não bloqueiam:**
+       - orçamento do macOS: início em ~477 ms contra a meta provisória de 400 ms (ADR-0011);
+       - o clang-tidy local no Windows acusa `src/services/common/Outcome.hpp:37` (o `exception_ptr` do STL da Microsoft não tem construtor de movimento); na CI do Linux está limpo;
+       - avisos de Node 20 nas actions.
 
 ---
 
@@ -178,7 +232,11 @@ Os detalhes estão no `CLAUDE.md` §1. Resumo:
 | Decisão | Onde está | Observação |
 |---|---|---|
 | Reimplementação limpa; nada de código, ícones ou `.ini` do HeidiSQL (GPL-2.0) | `CLAUDE.md` §0 | Inegociável |
-| C++20, CMake + vcpkg, Qt 6 Widgets, QScintilla | `CLAUDE.md` §3 | Escolhas de projeto do assistente; o usuário não contestou. Podem ser revistas via ADR |
+| C++20, CMake + vcpkg, Qt 6 Widgets | `CLAUDE.md` §3 | Escolhas de projeto do assistente; o usuário não contestou. Podem ser revistas via ADR |
+| Editor SQL próprio sobre `QPlainTextEdit`, sem QScintilla (GPL-3) | ADR-0013 | Usuário escolheu em 2026-10-21 |
+| Esquemas de cores, ajuda SQL, pesquisa na web e formatador online adiados para a Fase 12 | `CLAUDE.md` §5 | Usuário escolheu em 2026-10-21 |
+| Sem ViewModels até uma tela pedir; raiz de composição em `app/main.cpp` | `CLAUDE.md` §4.4 | Usuário decidiu em 2026-10-21 |
+| Trabalho delegado aos subagentes `backend`, `frontend` e `tests` (`.claude/agents/`); o agente principal define contratos, revisa, compila, testa e commita | — | Pedido do usuário em 2026-10-21 |
 | Drivers nativos (libmariadb, libpq, sqlite3) sem Qt SQL, carregados como plugins sob demanda | §2.2, §3 | Por leveza |
 | libssh2 embutido em vez de ssh/plink externos | §2.6, §3 | Por portabilidade e segurança |
 | Arquitetura em camadas (`core`, `sdk`, `drivers`, `modules`, `infra`, `services`, `ui`, `app`) e registries de módulos | §2.4, §4 | Extensibilidade |
@@ -227,6 +285,12 @@ Os detalhes estão no `CLAUDE.md` §1. Resumo:
 | Análise do HeidiSQL no Ghidra | ~19 min com `GHIDRA_HEADLESS_MAXMEM=2G`; a análise é efêmera (apagada no `close_binary`), então repetir custa o mesmo tempo |
 | Python | `C:\Python314\python.exe` (use `python -I`; para imprimir Unicode, `sys.stdout.reconfigure(encoding='utf-8')`) |
 | Shells | PowerShell 5.1 e Git Bash |
+| Windows SDK sumiu (C1083 `crtdbg.h`) | `Start-Process "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\setup.exe" -ArgumentList 'repair','--installPath','"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools"','--passive','--norestart' -Verb RunAs -Wait` (pede UAC). O `modify --add` do componente não adianta |
+| Mudar um header não recompila nada | `tools\vsdev.cmd cmake --preset win-debug --fresh` (reconfigura e redetecta o prefixo do `/showIncludes`); confira com `ninja -C build\win-debug -t deps <alvo>.obj` |
+| clang-tidy / clang-format nos scripts | passe o binário: `tools/run_clang_tidy.py --clang-tidy %APPDATA%\Python\Python314\Scripts\clang-tidy.exe --build-dir build\win-debug --source-dir . <arquivos>` e `tools/run_clang_format.py --clang-format …\clang-format.exe src tests bench` |
+| CI sem `gh` | não há `gh` nem token. Execuções: `https://api.github.com/repos/ryan-ggarcia/Mydbsql/actions/runs?per_page=3`; jobs: `…/actions/runs/<id>/jobs`; erros: `…/check-runs/<job>/annotations` (com a saída e a pilha do teste que falhou). O Python no Windows imprime `\r`: use `tr -d '\r'` no Git Bash |
+| Rodar os benchmarks de UI fora do CTest | ponha `C:\Users\Iberika\tools\Qt\6.11.3\msvc2022_64\bin` no PATH e `QT_QPA_PLATFORM=offscreen` |
+| Scripts Python no Git Bash | grave num arquivo e rode `python -E -P arquivo`; heredoc pelo stdin corrompe acentos e `\b`. Nunca deixe um `cat >` sem entrada num comando: ele fica esperando para sempre |
 | Artefatos da sessão de 2026-10-14 | scratchpad temporário da sessão (voláteis): JSON das evidências REA, pacote de evidências exportado (`heidisql_evidence_bundle.json`), `strings.txt`, `pe_imports.py`, `pe_exports.py`, `measure_heidi.ps1`, `rea_bridge.py`/`rea_call.py` (sessão MCP persistente da REA via HTTP local) e as amostras `run1..3`. Regenere se precisar |
 
 ---
@@ -234,7 +298,7 @@ Os detalhes estão no `CLAUDE.md` §1. Resumo:
 ## 9. Como retomar (checklist para o próximo agente)
 
 1. Ler este arquivo e o `CLAUDE.md`.
-2. Rodar `git status`: a Fase 0 pode ainda não estar commitada (§6, item 8).
-3. Perguntar ao usuário se pode commitar e fazer push para rodar a CI (§6, item 6), e se as metas de memória viram metas por plataforma (§6, item 2).
+2. Rodar `git status` e `git log --oneline origin/main..HEAD`: o usuário faz o push; o agente só commita localmente.
+3. Seguir o §6, item 10 (CI do `34977d0`, depois a Fase 6). Antes de qualquer decisão fora do plano, perguntar ao usuário com uma opção recomendada.
 4. **Cuidado com a memória:** a máquina Windows tem 7,7 GB, mas costuma ter menos de 1 GB livre. Builds com no máximo 3 jobs (os presets `win-*` já fazem isso); nada de Ghidra junto com builds. No notebook Linux (3,6 GB), use `-j2`.
 5. Ao terminar cada etapa, atualizar este `handoff.md` (§3 linha do tempo, §6 pendências) e marcar os itens no `CLAUDE.md` §5.
